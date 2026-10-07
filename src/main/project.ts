@@ -1,3 +1,4 @@
+import {ensureProjectSkills} from './skills';
 import {randomUUID} from 'node:crypto';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
@@ -44,6 +45,10 @@ ${project.assets.map(a => `- [${a.kind}] ${a.path}${a.publicPath ? ` — Remotio
 Leia os documentos de identidade e examine as referências quando necessário.
 Arquivos de áudio/vídeo não são automaticamente transcritos. Documentos binários podem
 precisar de uma versão em texto se suas ferramentas não conseguirem lê-los.
+
+## Skills de edição
+Leia .claude/skills/video-craft/SKILL.md e craft.md em cada pedido de edição.
+Consulte CLAUDE.md e outras skills locais relevantes.
 
 ## Estrutura e contrato do harness
 assets/ = originais; references/ = referências e documentos privados.
@@ -127,6 +132,7 @@ export const Video = () => {
   </AbsoluteFill>;
 };
 `);
+  await ensureProjectSkills(root);
   await writeSettings(root, brief);
   await persist(root, project);
   return project;
@@ -138,6 +144,7 @@ export async function openProject(root: string): Promise<Project> {
   p.brief = validateBrief(p.brief);
   if (p.session.id && !/^[a-f0-9-]{36}$/i.test(p.session.id)) throw new Error('ID de sessão inválido.');
   await fs.access(path.join(root, 'remotion/src/index.ts'));
+  await ensureProjectSkills(root);
   return p;
 }
 export async function importAsset(root: string, project: Project, source: string, kind: AssetKind, note: string, relevant: boolean) {

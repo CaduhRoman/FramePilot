@@ -44,3 +44,9 @@ O app usa `claude -p --output-format stream-json` e `--resume <session-id>`: **a
 Verificações rápidas: `npm run build` e `npm run test:smoke`. O teste do transporte usa um CLI simulado e não consome Claude.
 
 Validação desta implementação: TypeScript/build do app, testes de persistência/contexto/transporte e TypeScript/bundle do template Remotion passaram. O Studio não pôde iniciar neste ambiente de nuvem (`os.networkInterfaces` bloqueado); preview/hot reload, exportação MP4 e o Claude autenticado ainda precisam de validação no desktop.
+
+## Skills do Claude
+
+`.claude/skills/video-craft/SKILL.md` orienta o uso de `craft.md`, que contém as sete regras editoriais. `CLAUDE.md` instrui a leitura em todo pedido de vídeo. O CLI tem a ferramenta Skill habilitada e recebe um lembrete curto a cada pedido, sem repetir o briefing.
+
+O app inclui as skills no build e copia arquivos ausentes ao criar/abrir projetos e antes de chamar o Claude, inclusive em sessões existentes. Arquivos personalizados não são sobrescritos. Para adicionar skills ao app, crie `.claude/skills/<nome>/SKILL.md` e reconstrua; para um vídeo específico, adicione a skill na pasta desse projeto.

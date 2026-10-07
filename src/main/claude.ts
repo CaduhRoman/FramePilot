@@ -1,3 +1,4 @@
+import {ensureProjectSkills, skillReminder} from './skills';
 import {randomUUID} from 'node:crypto';
 import type {AppEvent, Project} from '../shared/types';
 import {persist, promptFor} from './project';
@@ -11,10 +12,11 @@ export class Claude {
   async send(root: string, project: Project, request: string, executable: string) {
     if (this.job) throw new Error('Aguarde ou interrompa a resposta atual.');
     if (typeof request !== 'string' || !request.trim() || request.length > 100_000) throw new Error('Pedido vazio ou muito longo.');
+    await ensureProjectSkills(root);
     const {prompt, changeIds} = promptFor(project, request.trim());
     const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-      '--permission-mode', 'acceptEdits', '--tools', 'Read,Write,Edit,Glob,Grep',
-      '--allowedTools', 'Read,Write,Edit,Glob,Grep'];
+      '--permission-mode', 'acceptEdits', '--tools', 'Read,Write,Edit,Glob,Grep,Skill',
+      '--allowedTools', 'Read,Write,Edit,Glob,Grep,Skill', '--append-system-prompt', skillReminder];
     if (project.session.id) args.push('--resume', project.session.id);
     project.messages.push({id: randomUUID(), role: 'user', text: request, at: new Date().toISOString()});
     await persist(root, project);
