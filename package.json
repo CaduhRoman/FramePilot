@@ -1,0 +1,40 @@
+{
+  "name": "framepilot",
+  "version": "0.1.0",
+  "description": "Local video editing harness for Claude Code and Remotion",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && electron-vite build",
+    "start": "electron-vite preview",
+    "test:smoke": "node --import tsx --test tests/smoke.test.ts",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {"cross-spawn": "7.0.6"},
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "^6.3.0"
+  },
+  "build": {
+    "appId": "com.framepilot.desktop",
+    "productName": "FramePilot",
+    "files": ["out/**/*", "package.json"],
+    "directories": {"output": "release"},
+    "win": {"target": "nsis"},
+    "mac": {"target": "dmg"},
+    "linux": {"target": "AppImage"}
+  }
+}
