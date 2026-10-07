@@ -12,14 +12,16 @@
     "test:smoke": "node --import tsx --test tests/smoke.test.ts",
     "dist": "npm run build && electron-builder"
   },
-  "dependencies": {"cross-spawn": "7.0.6"},
+  "dependencies": {
+    "cross-spawn": "7.0.6"
+  },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.4.1",
-    "electron": "^38.0.0",
+    "electron": "^38.8.6",
     "electron-builder": "^26.0.0",
     "electron-vite": "^4.0.0",
     "react": "^19.0.0",
@@ -31,10 +33,31 @@
   "build": {
     "appId": "com.framepilot.desktop",
     "productName": "FramePilot",
-    "files": ["out/**/*", "package.json"],
-    "directories": {"output": "release"},
-    "win": {"target": "nsis"},
-    "mac": {"target": "dmg"},
-    "linux": {"target": "AppImage"}
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "favicon.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "favicon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "favicon.png"
+    },
+    "icon": "favicon.png"
+  },
+  "allowScripts": {
+    "electron@38.8.6": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true
   }
 }

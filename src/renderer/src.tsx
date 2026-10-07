@@ -2,6 +2,8 @@ import React, {useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {API, AssetKind, Brief, Settings, State} from '../shared/types';
 import './style.css';
+import {Select} from './Select';
+const appLogo = new URL('../../favicon.png', import.meta.url).href;
 declare global {interface Window {framepilot: API}}
 const api = window.framepilot;
 const defaults: Brief = {name: '', briefing: '', width: 1920, height: 1080, fps: 30, duration: 30, style: '', notes: ''};
@@ -10,6 +12,13 @@ const labels: Record<AssetKind, string> = {logo: 'Logo', image: 'Imagem', video:
 function Icon({name}: {name: 'create' | 'settings' | 'brand'}) {
   return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {name === 'create' ? <><rect x="3" y="4" width="18" height="16" rx="5" /><path d="m10 9 5 3-5 3Z" /></> : name === 'settings' ? <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" fill="currentColor" stroke="none" /><circle cx="15" cy="17" r="3" fill="currentColor" stroke="none" /></> : <><path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3" /><path d="m10 8 6 4-6 4Z" /></>}
+  </svg>;
+}
+
+function ClaudeMascot() {
+  return <svg className="claude-mascot" width="48" height="40" viewBox="0 0 24 20" fill="currentColor" shapeRendering="crispEdges" aria-hidden="true">
+    <path d="M5 2h14v2h2v4h3v5h-3v-3h-2v5h-2v4h-3v-4h-4v4H7v-4H5v-5H3v3H0V8h3V4h2Z" />
+    <path className="claude-mascot-eyes" d="M8 6h2v4H8zm6 0h2v4h-2z" />
   </svg>;
 }
 
@@ -53,7 +62,7 @@ function App() {
   const openBrief = (create: boolean) => {setBrief(create ? {...defaults} : {...p!.brief}); setModal(create ? 'new' : 'brief');};
   return <div className="app">
     <header className="app-header">
-      <div className="brand"><span className="brand-mark"><Icon name="brand" /></span><div><strong>FramePilot</strong><small>Seu estúdio de vídeo</small></div></div>
+      <div className="brand"><span className="brand-mark"><img src={appLogo} alt="" /></span><div><strong>FramePilot</strong><small>Seu estúdio de vídeo</small></div></div>
       <nav className="glass-nav" role="tablist" aria-label="Seções do aplicativo" onKeyDown={event => {
         const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
         if (!keys.includes(event.key)) return;
@@ -79,7 +88,7 @@ function App() {
         <p>{p.brief.width} × {p.brief.height} · {p.brief.fps} FPS · {p.brief.duration}s</p>
         <button disabled={busy} onClick={() => openBrief(false)}>Configurações do projeto</button>
         <h3>Assets e referências</h3>
-        <label>Tipo<select value={kind} onChange={e => setKind(e.target.value as AssetKind)}>{Object.entries(labels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+        <label>Tipo<Select label="Tipo de arquivo" value={kind} onChange={value => setKind(value as AssetKind)} options={Object.entries(labels).map(([value, label]) => ({value, label}))} /></label>
         <label>Como usar<textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="Ex.: logo principal; vídeo da abertura; música de fundo" /></label>
         <label className="check"><input type="checkbox" checked={relevant} onChange={e => setRelevant(e.target.checked)} />Informar ao Claude no próximo pedido</label>
         <button disabled={busy} onClick={() => void act(async () => {await api.importAsset(kind, note, relevant); setNote('');})}>Adicionar arquivos</button>
@@ -97,7 +106,7 @@ function App() {
         {state.lastRender && <div className="success">Render concluído: {state.lastRender}</div>}
         <details className="logs"><summary>Status e logs ({state.logs.length})</summary><pre>{state.logs.join('\n')}</pre></details>
       </section>
-      <section className="chat"><div className="toolbar"><strong>Claude Code</strong><button disabled={busy} onClick={() => void act(api.resetSession)}>Nova sessão</button></div>
+      <section className="chat" aria-label="Conversa com Claude Code"><div className="toolbar chat-header"><div className="claude-brand"><ClaudeMascot /><div><strong>Claude Code</strong><small>Seu parceiro de edição</small></div></div><button disabled={busy} onClick={() => void act(api.resetSession)}>Nova sessão</button></div>
         <small className="session">{p.session.id ? `Sessão ${p.session.id.slice(0, 8)} · retomada automaticamente` : 'Sessão será criada no primeiro pedido'}</small>
         <div className="messages" aria-live="polite">{p.messages.length === 0 && <p className="hint">Ex.: monte um vídeo de 30s usando os clipes, com cortes no ritmo da trilha e uma cartela final com nossa logo.</p>}
           {p.messages.map(m => <article key={m.id} className={m.role}><small>{m.role === 'user' ? 'Você' : m.role === 'assistant' ? 'Claude' : 'Status'}</small><div>{m.text}</div></article>)}
@@ -129,7 +138,7 @@ function App() {
       <form onSubmit={e => {e.preventDefault(); const create = modal === 'new'; void act(async () => {await (create ? api.create(brief) : api.save(brief)); setModal(null);}); setModal(null);}}>
         <label>Nome<input required maxLength={200} value={brief.name} onChange={e => setBrief({...brief, name: e.target.value})} /></label>
         <label>Briefing / objetivo<textarea rows={3} value={brief.briefing} onChange={e => setBrief({...brief, briefing: e.target.value})} placeholder="Tipo de vídeo, público, mensagem, estrutura e resultado esperado" /></label>
-        <label>Formato<select value="" onChange={e => {const [width, height] = e.target.value.split('x').map(Number); setBrief({...brief, width, height});}}><option value="" disabled>Escolher proporção (ou editar abaixo)</option><option value="1920x1080">Horizontal 16:9</option><option value="1080x1920">Vertical 9:16</option><option value="1080x1080">Quadrado 1:1</option></select></label>
+        <label>Formato<Select label="Formato do vídeo" value={["1920x1080", "1080x1920", "1080x1080"].includes(`${brief.width}x${brief.height}`) ? `${brief.width}x${brief.height}` : ""} placeholder="Escolher proporção (ou editar abaixo)" onChange={value => {const [width, height] = value.split("x").map(Number); setBrief({...brief, width, height});}} options={[{value: "1920x1080", label: "Horizontal 16:9"}, {value: "1080x1920", label: "Vertical 9:16"}, {value: "1080x1080", label: "Quadrado 1:1"}]} /></label>
         <div className="numbers">{(['width', 'height', 'fps', 'duration'] as const).map((key, i) => <label key={key}>{['Largura', 'Altura', 'FPS', 'Duração (s)'][i]}<input type="number" required min={key === 'duration' ? 0.1 : key === 'fps' ? 1 : 2} step={key === 'duration' || key === 'fps' ? 'any' : 2} value={brief[key]} onChange={e => setBrief({...brief, [key]: Number(e.target.value)})} /></label>)}</div>
         <label>Estilo / direção visual<textarea rows={2} value={brief.style} onChange={e => setBrief({...brief, style: e.target.value})} /></label>
         <label>Observações<textarea rows={2} value={brief.notes} onChange={e => setBrief({...brief, notes: e.target.value})} /></label>

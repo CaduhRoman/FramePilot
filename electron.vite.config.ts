@@ -7,6 +7,8 @@ export default defineConfig({
   main: {plugins: [externalizeDepsPlugin(), {
     name: 'bundle-claude-skills',
     async closeBundle() {
+      await mkdir(path.join(__dirname, 'out/main'), {recursive: true});
+      await cp(path.join(__dirname, 'favicon.png'), path.join(__dirname, 'out/main/favicon.png'));
       const destination = path.join(__dirname, 'out/main/claude-resources');
       await mkdir(destination, {recursive: true});
       await cp(path.join(__dirname, '.claude/skills'), path.join(destination, '.claude/skills'), {recursive: true});

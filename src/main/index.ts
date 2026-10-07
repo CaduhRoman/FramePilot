@@ -162,6 +162,7 @@ app.whenReady().then(async () => {
     for (const key of ['claudePath', 'nodePath', 'npmPath'] as const) if (typeof saved[key] === 'string') settings[key] = saved[key];
   } catch {}
   window = new BrowserWindow({width: 1440, height: 940, minWidth: 1000, minHeight: 700, title: 'FramePilot',
+    icon: path.join(__dirname, 'favicon.png'), backgroundColor: '#101114',
     webPreferences: {preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false}});
   window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
   window.webContents.on('will-navigate', event => event.preventDefault());
