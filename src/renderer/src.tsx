@@ -7,10 +7,17 @@ const api = window.framepilot;
 const defaults: Brief = {name: '', briefing: '', width: 1920, height: 1080, fps: 30, duration: 30, style: '', notes: ''};
 const labels: Record<AssetKind, string> = {logo: 'Logo', image: 'Imagem', video: 'Vídeo', audio: 'Áudio / trilha', font: 'Fonte', reference: 'Referência visual', document: 'Identidade / documento'};
 
+function Icon({name}: {name: 'create' | 'settings' | 'brand'}) {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {name === 'create' ? <><rect x="3" y="4" width="18" height="16" rx="5" /><path d="m10 9 5 3-5 3Z" /></> : name === 'settings' ? <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" fill="currentColor" stroke="none" /><circle cx="15" cy="17" r="3" fill="currentColor" stroke="none" /></> : <><path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3" /><path d="m10 8 6 4-6 4Z" /></>}
+  </svg>;
+}
+
 function App() {
   const [state, setState] = useState<State>();
+  const [section, setSection] = useState<'create' | 'settings'>('create');
   const [error, setError] = useState('');
-  const [modal, setModal] = useState<'new' | 'brief' | 'tools' | null>(null);
+  const [modal, setModal] = useState<'new' | 'brief' | null>(null);
   const [brief, setBrief] = useState<Brief>(defaults);
   const [tools, setTools] = useState<Settings>({claudePath: '', nodePath: '', npmPath: ''});
   const [kind, setKind] = useState<AssetKind>('video');
@@ -30,7 +37,12 @@ function App() {
     api.state().then(setState).catch(e => setError(e.message));
     return off;
   }, []);
-  useEffect(() => {chatEnd.current?.scrollIntoView({block: 'end'});}, [stream, state?.project?.messages.length]);
+  useEffect(() => {
+    if (section === 'create') chatEnd.current?.scrollIntoView({block: 'end'});
+  }, [stream, state?.project?.messages.length, section]);
+  useEffect(() => {
+    if (state) setTools({...state.settings});
+  }, [state?.settings.claudePath, state?.settings.nodePath, state?.settings.npmPath]);
   async function act(action: () => Promise<unknown>) {
     setError('');
     try {await action();} catch (e) {setError((e as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, ''));}
@@ -40,17 +52,28 @@ function App() {
   const busy = Boolean(state.task) || state.claudeBusy || submitting;
   const openBrief = (create: boolean) => {setBrief(create ? {...defaults} : {...p!.brief}); setModal(create ? 'new' : 'brief');};
   return <div className="app">
-    <header><strong>FramePilot</strong><span>Edição de vídeo com Claude + Remotion</span>
-      <button disabled={busy} onClick={() => openBrief(true)}>Novo projeto</button>
-      <button disabled={busy} onClick={() => void act(api.open)}>Abrir projeto</button>
-      <button disabled={busy} onClick={() => {setTools({...state.settings}); setModal('tools');}}>Ferramentas</button>
-      <span className="status" role="status">{state.task || 'Pronto'}</span>
-      {busy && <button className="danger" onClick={() => void act(api.stop)}>Interromper</button>}
+    <header className="app-header">
+      <div className="brand"><span className="brand-mark"><Icon name="brand" /></span><div><strong>FramePilot</strong><small>Seu estúdio de vídeo</small></div></div>
+      <nav className="glass-nav" role="tablist" aria-label="Seções do aplicativo" onKeyDown={event => {
+        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+        if (!keys.includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 'create' : event.key === 'End' ? 'settings' : section === 'create' ? 'settings' : 'create';
+        setSection(next);
+        document.getElementById(`tab-${next}`)?.focus();
+      }}>
+        <span className={`glass-selection ${section === 'settings' ? 'to-settings' : ''}`} aria-hidden="true" />
+        {(['create', 'settings'] as const).map(tab => <button key={tab} id={`tab-${tab}`} role="tab" aria-selected={section === tab} aria-controls={`panel-${tab}`} tabIndex={section === tab ? 0 : -1} className={`nav-tab ${section === tab ? 'selected' : ''}`} onClick={() => setSection(tab)}><Icon name={tab} /><span>{tab === 'create' ? 'Criação' : 'Configurações'}</span></button>)}
+      </nav>
+      <div className="header-status"><span className={`status ${busy ? 'working' : ''}`} role="status"><i />{state.task || 'Tudo pronto'}</span>{busy && <button className="danger" onClick={() => void act(api.stop)}>Interromper</button>}</div>
     </header>
     {error && <div className="error" role="alert">{error}<button onClick={() => setError('')}>Fechar</button></div>}
-    {!p ? <main className="welcome"><h1>Do material bruto ao vídeo final.</h1><p>Crie um projeto, adicione seus arquivos e descreva a edição no chat.</p>
+    <div className="page-stack">
+    <section id="panel-create" role="tabpanel" aria-labelledby="tab-create" className={`page creation-page ${section === 'create' ? 'is-active' : ''}`} inert={section !== 'create'}>
+      <div className="section-heading"><div><small>ESTÚDIO</small><h1>Criação</h1></div><div className="actions"><button disabled={busy} onClick={() => void act(api.open)}>Abrir projeto</button><button className="primary" disabled={busy} onClick={() => openBrief(true)}>Novo projeto <span aria-hidden="true">＋</span></button></div></div>
+    {!p ? <main className="welcome"><span className="welcome-symbol"><Icon name="create" /></span><h2>Do material bruto<br />ao vídeo final.</h2><p>Crie um projeto, adicione seus arquivos e descreva a edição no chat.</p>
       <p>Node.js e Claude Code instalado/autenticado são necessários. Os arquivos ficam no seu computador.</p>
-      <button disabled={busy} onClick={() => openBrief(true)}>Criar projeto de vídeo</button></main> : <main className="workspace">
+      <button className="primary" disabled={busy} onClick={() => openBrief(true)}>Criar projeto de vídeo</button></main> : <main className="workspace">
       <aside>
         <h2>{p.brief.name}</h2><small className="path">{state.root}</small>
         <p>{p.brief.width} × {p.brief.height} · {p.brief.fps} FPS · {p.brief.duration}s</p>
@@ -68,7 +91,7 @@ function App() {
         <div className="toolbar"><strong>Preview · Remotion Studio</strong>
           <button disabled={busy} onClick={() => void act(api.preview)}>Reiniciar preview</button>
           <button disabled={busy} onClick={() => void act(api.install)}>Instalar dependências</button>
-          <button disabled={busy} onClick={() => void act(api.render)}>Renderizar MP4</button>
+          <button className="primary" disabled={busy} onClick={() => void act(api.render)}>Renderizar MP4</button>
         </div>
         <div className="preview">{state.previewUrl ? <iframe title="Remotion Studio" src={state.previewUrl} sandbox="allow-scripts allow-same-origin allow-downloads" allow="autoplay; fullscreen" /> : <div className="placeholder"><p>{state.task || 'Preview não iniciado.'}</p><p>Use Instalar dependências na primeira execução ou Reiniciar preview.</p></div>}</div>
         {state.lastRender && <div className="success">Render concluído: {state.lastRender}</div>}
@@ -87,15 +110,23 @@ function App() {
         </form>
       </section>
     </main>}
-    {modal && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-label={modal === 'tools' ? 'Ferramentas locais' : 'Configurações do projeto'}>
-      <h2>{modal === 'tools' ? 'Ferramentas locais' : modal === 'new' ? 'Novo projeto de vídeo' : 'Configurações do projeto'}</h2>
-      {modal === 'tools' ? <>
+    </section>
+    <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" className={`page settings-page ${section === 'settings' ? 'is-active' : ''}`} inert={section !== 'settings'}>
+      <div className="section-heading"><div><small>PREFERÊNCIAS</small><h1>Configurações</h1></div><span className="local-badge">No seu computador</span></div>
+      <main className="settings-content"><div className="settings-intro"><span className="welcome-symbol"><Icon name="settings" /></span><h2>Seu ambiente de criação.</h2><p>Conecte suas ferramentas locais.<br />O FramePilot cuida do workflow.</p></div>
+      <section className="settings-card"><h2>Ferramentas locais</h2>
         <p>Deixe em branco para detectar pelo PATH. Use o caminho do executável, sem argumentos.</p>
         {(['claudePath', 'nodePath', 'npmPath'] as const).map(key => <label key={key}>{key === 'claudePath' ? 'Claude Code (claude.exe / claude)' : key === 'nodePath' ? 'Node.js (node.exe / node)' : 'npm (npm.cmd / npm)'}<input value={tools[key]} onChange={e => setTools({...tools, [key]: e.target.value})} /></label>)}
         <p>Claude ausente ou sem login? Instale e execute <code>claude</code> uma vez para autenticar. Depois todas as sessões são controladas aqui.</p>
         <pre>{checking}</pre><div className="actions"><button disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setChecking(await api.check());})}>Salvar e verificar</button>
-          <button disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setModal(null);})}>Salvar</button></div>
-      </> : <form onSubmit={e => {e.preventDefault(); const create = modal === 'new'; void act(async () => {await (create ? api.create(brief) : api.save(brief)); setModal(null);}); setModal(null);}}>
+          <button disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setChecking('Configurações salvas.');})}>Salvar</button></div>
+
+      </section></main>
+    </section>
+    </div>
+    {modal && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-label="Configurações do projeto">
+      <h2>{modal === 'new' ? 'Novo projeto de vídeo' : 'Configurações do projeto'}</h2>
+      <form onSubmit={e => {e.preventDefault(); const create = modal === 'new'; void act(async () => {await (create ? api.create(brief) : api.save(brief)); setModal(null);}); setModal(null);}}>
         <label>Nome<input required maxLength={200} value={brief.name} onChange={e => setBrief({...brief, name: e.target.value})} /></label>
         <label>Briefing / objetivo<textarea rows={3} value={brief.briefing} onChange={e => setBrief({...brief, briefing: e.target.value})} placeholder="Tipo de vídeo, público, mensagem, estrutura e resultado esperado" /></label>
         <label>Formato<select value="" onChange={e => {const [width, height] = e.target.value.split('x').map(Number); setBrief({...brief, width, height});}}><option value="" disabled>Escolher proporção (ou editar abaixo)</option><option value="1920x1080">Horizontal 16:9</option><option value="1080x1920">Vertical 9:16</option><option value="1080x1080">Quadrado 1:1</option></select></label>
@@ -103,7 +134,7 @@ function App() {
         <label>Estilo / direção visual<textarea rows={2} value={brief.style} onChange={e => setBrief({...brief, style: e.target.value})} /></label>
         <label>Observações<textarea rows={2} value={brief.notes} onChange={e => setBrief({...brief, notes: e.target.value})} /></label>
         <button disabled={busy}>{modal === 'new' ? 'Escolher pasta e criar' : 'Salvar alterações'}</button>
-      </form>}
+      </form>
       <button className="close" onClick={() => setModal(null)}>Fechar</button>
     </section></div>}
   </div>;

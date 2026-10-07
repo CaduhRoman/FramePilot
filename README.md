@@ -20,7 +20,9 @@ Build local: `npm run build` e `npm start`. Instalador para o sistema atual: `np
 4. Envie o primeiro pedido no chat. Claude edita `remotion/src`; o Studio recarrega as mudanças.
 5. Faça novos pedidos e clique em **Renderizar MP4** para exportar a composição `Main` em H.264.
 
-**Ferramentas** permite verificar/configurar caminhos de Claude, Node e npm. No Windows, prefira o Claude nativo (`claude.exe`); a instalação do Claude também pode exigir Git for Windows. Não use caminhos/CLI de WSL dentro do app Windows.
+**Configurações → Ferramentas locais** permite verificar/configurar caminhos de Claude, Node e npm. No Windows, prefira o Claude nativo (`claude.exe`); a instalação do Claude também pode exigir Git for Windows. Não use caminhos/CLI de WSL dentro do app Windows.
+
+A seção **Criação** reúne projeto, assets, preview e chat. **Configurações** reúne as ferramentas locais. O header usa uma cápsula translúcida com transições suaves; alternar seções preserva o preview e o chat. A navegação funciona por teclado e respeita a preferência do sistema por movimento reduzido.
 
 ## Persistência e contexto
 
