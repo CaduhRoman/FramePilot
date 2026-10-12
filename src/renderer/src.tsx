@@ -1,13 +1,14 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import type {API, AssetKind, Brief, Settings, State} from '../shared/types';
+import type {API, Asset, AssetKind, Brief, Settings, State} from '../shared/types';
 import './style.css';
 import {Select} from './Select';
+import {AssetList, NoteEditor, labels} from './Assets';
+import {Trimmer} from './Trimmer';
 const appLogo = new URL('../../favicon.png', import.meta.url).href;
 declare global {interface Window {framepilot: API}}
 const api = window.framepilot;
 const defaults: Brief = {name: '', briefing: '', width: 1920, height: 1080, fps: 30, duration: 30, style: '', notes: ''};
-const labels: Record<AssetKind, string> = {logo: 'Logo', image: 'Imagem', video: 'Vídeo', audio: 'Áudio / trilha', font: 'Fonte', reference: 'Referência visual', document: 'Identidade / documento'};
 
 function Icon({name}: {name: 'create' | 'settings' | 'brand'}) {
   return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -28,14 +29,15 @@ function App() {
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'new' | 'brief' | null>(null);
   const [brief, setBrief] = useState<Brief>(defaults);
-  const [tools, setTools] = useState<Settings>({claudePath: '', nodePath: '', npmPath: ''});
-  const [kind, setKind] = useState<AssetKind>('video');
+  const [tools, setTools] = useState<Settings>({claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true});
+  const [kind, setKind] = useState<AssetKind>('main');
   const [note, setNote] = useState('');
   const [relevant, setRelevant] = useState(true);
   const [request, setRequest] = useState('');
   const [stream, setStream] = useState('');
   const [checking, setChecking] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [editing, setEditing] = useState<Asset | null>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const off = api.onEvent(event => {
@@ -51,7 +53,7 @@ function App() {
   }, [stream, state?.project?.messages.length, section]);
   useEffect(() => {
     if (state) setTools({...state.settings});
-  }, [state?.settings.claudePath, state?.settings.nodePath, state?.settings.npmPath]);
+  }, [state?.settings.claudePath, state?.settings.nodePath, state?.settings.npmPath, state?.settings.transcribe, state?.settings.frames]);
   async function act(action: () => Promise<unknown>) {
     setError('');
     try {await action();} catch (e) {setError((e as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, ''));}
@@ -79,9 +81,17 @@ function App() {
     {error && <div className="error" role="alert">{error}<button onClick={() => setError('')}>Fechar</button></div>}
     <div className="page-stack">
     <section id="panel-create" role="tabpanel" aria-labelledby="tab-create" className={`page creation-page ${section === 'create' ? 'is-active' : ''}`} inert={section !== 'create'}>
-      <div className="section-heading"><div><small>ESTÚDIO</small><h1>Criação</h1></div><div className="actions"><button disabled={busy} onClick={() => void act(api.open)}>Abrir projeto</button><button className="primary" disabled={busy} onClick={() => openBrief(true)}>Novo projeto <span aria-hidden="true">＋</span></button></div></div>
-    {!p ? <main className="welcome"><span className="welcome-symbol"><Icon name="create" /></span><h2>Do material bruto<br />ao vídeo final.</h2><p>Crie um projeto, adicione seus arquivos e descreva a edição no chat.</p>
-      <p>Node.js e Claude Code instalado/autenticado são necessários. Os arquivos ficam no seu computador.</p>
+      <div className="section-heading"><div><small>ESTÚDIO</small><h1>Criação</h1></div><div className="actions">{p && <button disabled={busy} onClick={() => void act(api.close)}>‹ Projetos</button>}<button disabled={busy} onClick={() => void act(() => api.open())}>Abrir outra pasta</button><button className="primary" disabled={busy} onClick={() => openBrief(true)}>Novo projeto <span aria-hidden="true">＋</span></button></div></div>
+    {!p ? state.projects.length ? <main className="library">
+      <div className="library-head"><div><h2>Seus projetos</h2><small className="path">{state.library}</small></div><button disabled={busy} onClick={() => void act(api.showLibrary)}>Abrir pasta</button></div>
+      <ul className="project-grid">{state.projects.map(s => <li key={s.root}><button disabled={busy} title={s.root} onClick={() => void act(() => api.open(s.root))}>
+        <strong>{s.name}</strong>
+        <small>{s.width} × {s.height} · {s.duration}s</small>
+        <small>{s.messages ? `${s.messages} mensagem(ns)${s.hasSession ? ' · sessão ativa' : ''}` : 'Sem pedidos ainda'}</small>
+        <small>Editado {new Date(s.updatedAt).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'})}</small>
+      </button></li>)}</ul>
+    </main> : <main className="welcome"><span className="welcome-symbol"><Icon name="create" /></span><h2>Do material bruto<br />ao vídeo final.</h2><p>Crie um projeto, adicione seus arquivos e descreva a edição no chat.</p>
+      <p>Node.js e Claude Code instalado/autenticado são necessários. Os projetos ficam em {state.library}.</p>
       <button className="primary" disabled={busy} onClick={() => openBrief(true)}>Criar projeto de vídeo</button></main> : <main className="workspace">
       <aside>
         <h2>{p.brief.name}</h2><small className="path">{state.root}</small>
@@ -92,7 +102,7 @@ function App() {
         <label>Como usar<textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="Ex.: logo principal; vídeo da abertura; música de fundo" /></label>
         <label className="check"><input type="checkbox" checked={relevant} onChange={e => setRelevant(e.target.checked)} />Informar ao Claude no próximo pedido</label>
         <button disabled={busy} onClick={() => void act(async () => {await api.importAsset(kind, note, relevant); setNote('');})}>Adicionar arquivos</button>
-        <ul className="assets">{p.assets.map(a => <li key={a.id} title={`${a.path}\n${a.note}`}><small>{labels[a.kind]}</small><div>{a.name}</div>{a.note && <small>{a.note}</small>}</li>)}</ul>
+        <AssetList assets={p.assets} busy={busy} api={api} act={act} onEdit={setEditing} />
         <small>{p.session.initialSent ? `${p.changes.filter(c => c.relevant).length} alteração(ões) para o próximo pedido.` : 'O primeiro pedido receberá o contexto completo.'}</small>
         <button disabled={busy} onClick={() => void act(api.reveal)}>Abrir pasta / último render</button>
       </aside>
@@ -126,13 +136,29 @@ function App() {
       <section className="settings-card"><h2>Ferramentas locais</h2>
         <p>Deixe em branco para detectar pelo PATH. Use o caminho do executável, sem argumentos.</p>
         {(['claudePath', 'nodePath', 'npmPath'] as const).map(key => <label key={key}>{key === 'claudePath' ? 'Claude Code (claude.exe / claude)' : key === 'nodePath' ? 'Node.js (node.exe / node)' : 'npm (npm.cmd / npm)'}<input value={tools[key]} onChange={e => setTools({...tools, [key]: e.target.value})} /></label>)}
+        <label className="check"><input type="checkbox" checked={tools.transcribe} onChange={e => setTools({...tools, transcribe: e.target.checked})} />Transcrever falas com Whisper antes de cada pedido (GPU NVIDIA quando disponível)</label>
+        <label className="check"><input type="checkbox" checked={tools.frames} onChange={e => setTools({...tools, frames: e.target.checked})} />Extrair frames dos vídeos com FFmpeg para análise visual do Claude</label>
+        <p>Na primeira vez são baixados o Whisper e o modelo large-v3-turbo (~2,3 GB). "Salvar e verificar" já faz esse download.</p>
         <p>Claude ausente ou sem login? Instale e execute <code>claude</code> uma vez para autenticar. Depois todas as sessões são controladas aqui.</p>
         <pre>{checking}</pre><div className="actions"><button disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setChecking(await api.check());})}>Salvar e verificar</button>
           <button disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setChecking('Configurações salvas.');})}>Salvar</button></div>
+      </section>
+      <section className="settings-card"><h2>Pasta de projetos</h2>
+        <p>Novos projetos são criados automaticamente aqui e aparecem na tela inicial.</p>
+        <code className="path">{state.library}</code>
+        <div className="actions"><button onClick={() => void act(api.showLibrary)}>Abrir pasta</button></div>
 
       </section></main>
     </section>
     </div>
+    {editing && p && (() => {
+      const asset = p.assets.find(a => a.id === editing.id);
+      if (!asset) return null;
+      const save = (patch: Parameters<API['updateAsset']>[1]) => void act(async () => {await api.updateAsset(asset.id, patch); setEditing(null);});
+      return asset.kind === 'main' || asset.kind === 'video'
+        ? <Trimmer asset={asset} fps={p.brief.fps} busy={busy} onSave={async patch => save(patch)} onClose={() => setEditing(null)} />
+        : <NoteEditor asset={asset} busy={busy} onSave={save} onClose={() => setEditing(null)} />;
+    })()}
     {modal && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-label="Configurações do projeto">
       <h2>{modal === 'new' ? 'Novo projeto de vídeo' : 'Configurações do projeto'}</h2>
       <form onSubmit={e => {e.preventDefault(); const create = modal === 'new'; void act(async () => {await (create ? api.create(brief) : api.save(brief)); setModal(null);}); setModal(null);}}>
@@ -142,7 +168,7 @@ function App() {
         <div className="numbers">{(['width', 'height', 'fps', 'duration'] as const).map((key, i) => <label key={key}>{['Largura', 'Altura', 'FPS', 'Duração (s)'][i]}<input type="number" required min={key === 'duration' ? 0.1 : key === 'fps' ? 1 : 2} step={key === 'duration' || key === 'fps' ? 'any' : 2} value={brief[key]} onChange={e => setBrief({...brief, [key]: Number(e.target.value)})} /></label>)}</div>
         <label>Estilo / direção visual<textarea rows={2} value={brief.style} onChange={e => setBrief({...brief, style: e.target.value})} /></label>
         <label>Observações<textarea rows={2} value={brief.notes} onChange={e => setBrief({...brief, notes: e.target.value})} /></label>
-        <button disabled={busy}>{modal === 'new' ? 'Escolher pasta e criar' : 'Salvar alterações'}</button>
+        <button disabled={busy}>{modal === 'new' ? 'Criar projeto' : 'Salvar alterações'}</button>
       </form>
       <button className="close" onClick={() => setModal(null)}>Fechar</button>
     </section></div>}

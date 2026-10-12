@@ -1,8 +1,20 @@
 import {ensureProjectSkills, skillReminder} from './skills';
 import {randomUUID} from 'node:crypto';
+import {promises as fs} from 'node:fs';
+import path from 'node:path';
 import type {AppEvent, Project} from '../shared/types';
 import {persist, promptFor} from './project';
 import {claudeExecutable, jsonLines, Processes, type Job} from './processes';
+
+export const FRAME_TOOL = 'mcp__framepilot__extract_frames';
+/** Writes the MCP config that lets Claude request frames on demand: Electron runs the bundled frame-tool in Node mode. */
+async function frameToolConfig(root: string) {
+  const file = path.join(root, '.claude', 'framepilot-mcp.json');
+  await fs.mkdir(path.dirname(file), {recursive: true});
+  await fs.writeFile(file, JSON.stringify({mcpServers: {framepilot: {type: 'stdio', command: process.execPath,
+    args: [path.join(__dirname, 'frame-tool.js'), root], env: {ELECTRON_RUN_AS_NODE: '1'}}}}, null, 2));
+  return file;
+}
 
 export class Claude {
   job?: Job;
@@ -16,7 +28,8 @@ export class Claude {
     const {prompt, changeIds} = promptFor(project, request.trim());
     const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
       '--permission-mode', 'acceptEdits', '--tools', 'Read,Write,Edit,Glob,Grep,Skill',
-      '--allowedTools', 'Read,Write,Edit,Glob,Grep,Skill', '--append-system-prompt', skillReminder];
+      '--allowedTools', `Read,Write,Edit,Glob,Grep,Skill,${FRAME_TOOL}`, '--append-system-prompt', skillReminder,
+      '--mcp-config', await frameToolConfig(root), '--strict-mcp-config'];
     if (project.session.id) args.push('--resume', project.session.id);
     project.messages.push({id: randomUUID(), role: 'user', text: request, at: new Date().toISOString()});
     await persist(root, project);

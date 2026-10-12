@@ -4,7 +4,8 @@ import path from 'node:path';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  main: {plugins: [externalizeDepsPlugin(), {
+  // frame-tool is the MCP server Claude Code starts to request frames on demand.
+  main: {build: {rollupOptions: {input: {index: 'src/main/index.ts', 'frame-tool': 'src/main/frame-tool.ts'}, output: {chunkFileNames: '[name]-[hash].js'}}}, plugins: [externalizeDepsPlugin(), {
     name: 'bundle-claude-skills',
     async closeBundle() {
       await mkdir(path.join(__dirname, 'out/main'), {recursive: true});
