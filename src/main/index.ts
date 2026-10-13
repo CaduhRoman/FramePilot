@@ -21,7 +21,7 @@ let lastRender: string | null = null;
 let library = '';
 let projects: ProjectSummary[] = [];
 let media: Stoppable | undefined;
-let settings: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true};
+let settings: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: ''};
 const whisperHome = () => path.join(app.getPath('userData'), 'whisper');
 const logs: string[] = [];
 const processes = new Processes();
@@ -195,7 +195,7 @@ function registerIPC() {
         }
       }
     } finally {media = undefined; task = 'Claude'; changed();}
-    await claude.send(root, project, text, settings.claudePath);
+    await claude.send(root, project, text, settings.claudePath, settings.model);
   }));
   handle('stop', async () => {
     claude.job?.stop();
@@ -235,7 +235,8 @@ function registerIPC() {
       if (typeof next?.[key] !== 'string' || next[key].length > 4096) throw new Error('Caminho inválido.');
     }
     if (typeof next.transcribe !== 'boolean' || typeof next.frames !== 'boolean') throw new Error('Opção inválida.');
-    settings = {claudePath: next.claudePath.trim(), nodePath: next.nodePath.trim(), npmPath: next.npmPath.trim(), transcribe: next.transcribe, frames: next.frames};
+    if (typeof next.model !== 'string' || !/^[w.[]-]{0,100}$/.test(next.model.trim())) throw new Error('Modelo inválido.');
+    settings = {claudePath: next.claudePath.trim(), nodePath: next.nodePath.trim(), npmPath: next.npmPath.trim(), transcribe: next.transcribe, frames: next.frames, model: next.model.trim()};
     await fs.writeFile(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings));
   }));
   handle('check', () => runTask('Verificando ferramentas', async () => {
@@ -292,7 +293,7 @@ app.whenReady().then(async () => {
   try {await fs.mkdir(library, {recursive: true}); projects = await listProjects(library);} catch {}
   try {
     const saved = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
-    for (const key of ['claudePath', 'nodePath', 'npmPath'] as const) if (typeof saved[key] === 'string') settings[key] = saved[key];
+    for (const key of ['claudePath', 'nodePath', 'npmPath', 'model'] as const) if (typeof saved[key] === 'string') settings[key] = saved[key];
     for (const key of ['transcribe', 'frames'] as const) if (typeof saved[key] === 'boolean') settings[key] = saved[key];
   } catch {}
   window = new BrowserWindow({width: 1440, height: 940, minWidth: 1000, minHeight: 700, title: 'FramePilot',

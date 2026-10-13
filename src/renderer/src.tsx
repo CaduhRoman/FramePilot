@@ -10,6 +10,8 @@ declare global {interface Window {framepilot: API}}
 const api = window.framepilot;
 const defaults: Brief = {name: '', briefing: '', width: 1920, height: 1080, fps: 30, duration: 30, style: '', notes: ''};
 
+const MODELS = ['', 'opus', 'sonnet', 'haiku', 'fable'];
+
 function Icon({name}: {name: 'create' | 'settings' | 'brand'}) {
   return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {name === 'create' ? <><rect x="3" y="4" width="18" height="16" rx="5" /><path d="m10 9 5 3-5 3Z" /></> : name === 'settings' ? <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" fill="currentColor" stroke="none" /><circle cx="15" cy="17" r="3" fill="currentColor" stroke="none" /></> : <><path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3" /><path d="m10 8 6 4-6 4Z" /></>}
@@ -29,7 +31,7 @@ function App() {
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'new' | 'brief' | null>(null);
   const [brief, setBrief] = useState<Brief>(defaults);
-  const [tools, setTools] = useState<Settings>({claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true});
+  const [tools, setTools] = useState<Settings>({claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: ''});
   const [kind, setKind] = useState<AssetKind>('main');
   const [note, setNote] = useState('');
   const [relevant, setRelevant] = useState(true);
@@ -53,7 +55,7 @@ function App() {
   }, [stream, state?.project?.messages.length, section]);
   useEffect(() => {
     if (state) setTools({...state.settings});
-  }, [state?.settings.claudePath, state?.settings.nodePath, state?.settings.npmPath, state?.settings.transcribe, state?.settings.frames]);
+  }, [state?.settings.claudePath, state?.settings.nodePath, state?.settings.npmPath, state?.settings.transcribe, state?.settings.frames, state?.settings.model]);
   async function act(action: () => Promise<unknown>) {
     setError('');
     try {await action();} catch (e) {setError((e as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, ''));}
@@ -136,6 +138,9 @@ function App() {
       <section className="settings-card"><h2>Ferramentas locais</h2>
         <p>Deixe em branco para detectar pelo PATH. Use o caminho do executável, sem argumentos.</p>
         {(['claudePath', 'nodePath', 'npmPath'] as const).map(key => <label key={key}>{key === 'claudePath' ? 'Claude Code (claude.exe / claude)' : key === 'nodePath' ? 'Node.js (node.exe / node)' : 'npm (npm.cmd / npm)'}<input value={tools[key]} onChange={e => setTools({...tools, [key]: e.target.value})} /></label>)}
+        <label>Modelo do Claude<select value={MODELS.includes(tools.model) ? tools.model : 'custom'} onChange={e => setTools({...tools, model: e.target.value === 'custom' ? 'claude-opus-5-5' : e.target.value})}>
+          <option value="">Padrão do Claude Code</option><option value="opus">Opus (mais recente)</option><option value="sonnet">Sonnet (mais recente)</option><option value="haiku">Haiku (mais recente)</option><option value="fable">Fable (mais recente)</option><option value="custom">ID personalizado…</option></select></label>
+        {!MODELS.includes(tools.model) && <label>ID do modelo<input value={tools.model} placeholder="claude-opus-5-5" onChange={e => setTools({...tools, model: e.target.value})} /></label>}
         <label className="check"><input type="checkbox" checked={tools.transcribe} onChange={e => setTools({...tools, transcribe: e.target.checked})} />Transcrever falas com Whisper antes de cada pedido (GPU NVIDIA quando disponível)</label>
         <label className="check"><input type="checkbox" checked={tools.frames} onChange={e => setTools({...tools, frames: e.target.checked})} />Extrair frames dos vídeos com FFmpeg para análise visual do Claude</label>
         <p>Na primeira vez são baixados o Whisper e o modelo large-v3-turbo (~2,3 GB). "Salvar e verificar" já faz esse download.</p>

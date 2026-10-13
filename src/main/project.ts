@@ -185,7 +185,10 @@ remotion/src/index.ts = entrada; remotion/src/Root.tsx = composição principal.
 remotion/src/Video.tsx = edição livre; remotion/src/project-settings.json = configuração gerenciada.
 project.json e CONTEXT.md são gerenciados pelo aplicativo: não os altere.
 Mantenha uma composição com ID Main e use project-settings.json para resolução, FPS e duração.
-Use ferramentas oficiais do Remotion, Sequence, OffthreadVideo, Audio, Img e staticFile.
+Use ferramentas oficiais do Remotion: Sequence, Img, staticFile e Video/Audio de @remotion/media.
+Vídeo: use Video de @remotion/media (não OffthreadVideo nem Html5Video); recorte com trimBefore/durationInFrames.
+Toda Sequence (ou Video com from) que contém vídeo/áudio recebe premountFor={fps} (1 s), para carregar antes do corte e evitar frames pretos no preview.
+Não monte o mesmo arquivo duas vezes no mesmo trecho sem necessidade; se um efeito exigir duas instâncias, deixe só uma com som (a outra muted).
 Animações devem depender de frames, sem aleatoriedade não determinística.
 Não inicie servidores, não renderize e não instale dependências: o harness faz isso.
 Se alterar package.json, avise que o usuário deve clicar em Instalar dependências.
@@ -230,7 +233,7 @@ export async function createProject(root: string, input: Brief): Promise<Project
   await fs.writeFile(path.join(root, 'remotion/package.json'), JSON.stringify({
     name: 'framepilot-video', private: true, version: '1.0.0',
     scripts: {studio: 'remotion studio src/index.ts', render: 'remotion render src/index.ts Main'},
-    dependencies: {'@remotion/cli': REMOTION_VERSION, remotion: REMOTION_VERSION, react: '19.1.0', 'react-dom': '19.1.0'},
+    dependencies: {'@remotion/cli': REMOTION_VERSION, '@remotion/media': REMOTION_VERSION, remotion: REMOTION_VERSION, react: '19.1.0', 'react-dom': '19.1.0'},
     devDependencies: {typescript: '5.9.3', '@types/react': '^19.0.0', '@types/react-dom': '^19.0.0'}
   }, null, 2));
   await fs.writeFile(path.join(root, 'remotion/tsconfig.json'), JSON.stringify({compilerOptions: {
@@ -273,7 +276,24 @@ export async function openProject(root: string): Promise<Project> {
   if (p.session.id && !/^[a-f0-9-]{36}$/i.test(p.session.id)) throw new Error('ID de sessão inválido.');
   await fs.access(path.join(root, 'remotion/src/index.ts'));
   await ensureProjectSkills(root);
+  await ensureMediaPlayback(root, p);
   return p;
+}
+const MEDIA_NOTE = 'Atualização do harness: o preview passou a usar @remotion/media.';
+/** Older projects: adds @remotion/media and asks Claude, once, to migrate OffthreadVideo/Html5Video and add premountFor. */
+async function ensureMediaPlayback(root: string, p: Project) {
+  const file = path.join(root, 'remotion/package.json');
+  const pkg = JSON.parse(await fs.readFile(file, 'utf8'));
+  if (!pkg.dependencies?.['@remotion/media']) {
+    pkg.dependencies = {...pkg.dependencies, '@remotion/media': pkg.dependencies?.remotion ?? REMOTION_VERSION};
+    await fs.writeFile(file, JSON.stringify(pkg, null, 2));
+  }
+  const src = path.join(root, 'remotion/src');
+  const code = (await Promise.all((await fs.readdir(src)).filter(n => /\.tsx?$/.test(n)).map(n => fs.readFile(path.join(src, n), 'utf8')))).join('\n');
+  if (!/OffthreadVideo|Html5Video|Html5Audio/.test(code) || p.changes.some(c => c.text.startsWith(MEDIA_NOTE))) return;
+  p.changes.push({id: randomUUID(), relevant: true, text: `${MEDIA_NOTE} No próximo pedido, antes do resto: troque OffthreadVideo/Html5Video por Video e Html5Audio por Audio de '@remotion/media' (mesmas props: trimBefore, volume, muted, style); `
+    + 'adicione premountFor={fps} às Sequences com mídia; mantenha instâncias duplicadas só se o efeito exigir (uma delas muted). Não mude o resultado visual.'});
+  await persist(root, p);
 }
 export async function importAsset(root: string, project: Project, source: string, kind: AssetKind, note: string, relevant: boolean) {
   if (!kinds.includes(kind)) throw new Error('Tipo de asset inválido.');

@@ -52,6 +52,8 @@ export async function probe(processes: Processes, dir: string, file: string, onJ
     fps: rate(video.avg_frame_rate) || rate(video.r_frame_rate) || 30, audio: streams.some(s => s.codec_type === 'audio')};
 }
 
+const MATERIAL_VERSION = 2;
+
 interface Cut {file: string; start: number; end: number; audio: boolean}
 // Every cut is re-encoded with identical audio/video parameters and joined back to back: no gaps, no black frames.
 async function encode(processes: Processes, dir: string, cuts: Cut[], output: string, fps: number, onJob?: (job?: Job) => void) {
@@ -65,6 +67,8 @@ async function encode(processes: Processes, dir: string, cuts: Cut[], output: st
   });
   const graph = `${audio.join(';')};${cuts.map((_, i) => `[${i}:v:0][a${i}]`).join('')}concat=n=${cuts.length}:v=1:a=1[v][a]`;
   args.push('-filter_complex', graph, '-map', '[v]', '-map', '[a]', '-r', String(fps), '-c:v', 'libx264', '-preset', 'fast', '-crf', '17',
+    // One keyframe per second keeps seeks cheap in the Studio preview; render quality is unchanged.
+    '-g', String(Math.max(1, Math.round(fps))), '-keyint_min', String(Math.max(1, Math.round(fps))),
     '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output);
   await run(processes, dir, 'ffmpeg', args, onJob);
 }
@@ -74,9 +78,10 @@ export async function prepareMaterial(root: string, project: Project, processes:
   const fps = project.brief.fps;
   const mains = project.assets.filter(a => a.kind === 'main');
   const cuts = project.assets.filter(a => a.kind === 'video' && a.segments?.length);
-  const key = digest({fps, mains: mains.map(a => [a.path, a.segments ?? null]), cuts: cuts.map(a => [a.path, a.segments])});
+  // v bumps when the encoding changes, so existing material is prepared again once.
+  const key = digest({v: MATERIAL_VERSION, fps, mains: mains.map(a => [a.path, a.segments ?? null]), cuts: cuts.map(a => [a.path, a.segments])});
   const old = project.material;
-  if ((old?.key ?? digest({fps, mains: [], cuts: []})) === key
+  if ((old?.key ?? digest({v: MATERIAL_VERSION, fps, mains: [], cuts: []})) === key
     && (await Promise.all((old?.parts ?? []).map(p => exists(publicFile(root, p.file))))).every(Boolean)) return false;
   const parts: MaterialPart[] = [];
   if (mains.length || cuts.length) {
@@ -110,24 +115,22 @@ export async function prepareMaterial(root: string, project: Project, processes:
         sources.push({assetId: a.id, name: a.name, path: a.path, originalDuration: info.get(a.id)!.duration, segments, offset});
         offset += total(segments);
       }
-      const hash = digest({v: 1, fps, sources: sources.map(s => [s.path, s.segments])}).slice(0, 10);
+      const hash = digest({v: MATERIAL_VERSION, fps, sources: sources.map(s => [s.path, s.segments])}).slice(0, 10);
       const file = kind === 'main' ? `main/material-${hash}.mp4` : `assets/${group[0].id.slice(0, 8)}-recorte-${hash}.mp4`;
       const output = publicFile(root, file);
       if (!await exists(output)) {
         await fs.mkdir(path.dirname(output), {recursive: true});
         const temp = `${output}.tmp.mp4`;
-        const single = sources.length === 1 && !group[0].segments?.length && /\.mp4$/i.test(group[0].path);
         log(`Preparando ${kind === 'main' ? 'vídeo principal' : group[0].name} (${offset.toFixed(1)}s)…`);
         try {
-          // An untrimmed MP4 is already the exact material: copy instead of re-encoding.
-          if (single) await fs.copyFile(path.join(root, group[0].path), temp);
-          else await encode(processes, dir, sources.flatMap(s => s.segments.map(seg => ({file: path.join(root, s.path), ...seg, audio: info.get(s.assetId)!.audio}))), temp, fps, onJob);
+          // Always re-encoded, even untrimmed MP4s: originals often have sparse keyframes that make preview seeks slow.
+          await encode(processes, dir, sources.flatMap(s => s.segments.map(seg => ({file: path.join(root, s.path), ...seg, audio: info.get(s.assetId)!.audio}))), temp, fps, onJob);
           await fs.rename(temp, output);
         } finally {await fs.rm(temp, {force: true}).catch(() => {});}
       }
       const p = info.get(group[0].id)!;
       parts.push({file, kind, assetId: kind === 'aux' ? group[0].id : undefined, duration: offset, width: p.width, height: p.height,
-        fps: kind === 'main' && sources.length === 1 && !group[0].segments?.length ? p.fps : fps, sources});
+        fps, sources});
     };
     for (const group of groups) await build('main', group);
     for (const a of cuts) await build('aux', [a]);

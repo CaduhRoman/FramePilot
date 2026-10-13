@@ -39,7 +39,7 @@ export interface Project {
   frames?: string;
 }
 export interface ProjectSummary {root: string; name: string; width: number; height: number; duration: number; messages: number; hasSession: boolean; updatedAt: string}
-export interface Settings {claudePath: string; nodePath: string; npmPath: string; transcribe: boolean; frames: boolean}
+export interface Settings {claudePath: string; nodePath: string; npmPath: string; transcribe: boolean; frames: boolean; model: string}
 export interface State {
   project: Project | null;
   root: string | null;

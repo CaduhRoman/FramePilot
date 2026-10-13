@@ -21,7 +21,7 @@ export class Claude {
   constructor(private processes: Processes, private event: (event: AppEvent) => void,
     private log: (text: string) => void, private changed: () => void) {}
 
-  async send(root: string, project: Project, request: string, executable: string) {
+  async send(root: string, project: Project, request: string, executable: string, model = '') {
     if (this.job) throw new Error('Aguarde ou interrompa a resposta atual.');
     if (typeof request !== 'string' || !request.trim() || request.length > 100_000) throw new Error('Pedido vazio ou muito longo.');
     await ensureProjectSkills(root);
@@ -30,6 +30,7 @@ export class Claude {
       '--permission-mode', 'acceptEdits', '--tools', 'Read,Write,Edit,Glob,Grep,Skill',
       '--allowedTools', `Read,Write,Edit,Glob,Grep,Skill,${FRAME_TOOL}`, '--append-system-prompt', skillReminder,
       '--mcp-config', await frameToolConfig(root), '--strict-mcp-config'];
+    if (model) args.push('--model', model);
     if (project.session.id) args.push('--resume', project.session.id);
     project.messages.push({id: randomUUID(), role: 'user', text: request, at: new Date().toISOString()});
     await persist(root, project);
