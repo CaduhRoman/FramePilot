@@ -1,17 +1,21 @@
-import {app, BrowserWindow, dialog, ipcMain, protocol, shell} from 'electron';
+import {app, BrowserWindow, dialog, ipcMain, protocol, shell, webFrameMain} from 'electron';
 import {createReadStream} from 'node:fs';
 import {Readable} from 'node:stream';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {AppEvent, AssetKind, AssetPatch, Brief, Project, ProjectSummary, Settings, State} from '../shared/types';
-import {createProject, importAsset, listProjects, materialContext, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, removeAsset, updateAsset, validateBrief, writeSettings} from './project';
+import type {AppEvent, AssetKind, AssetPatch, Brief, CommandRecord, Project, ProjectSummary, Settings, State} from '../shared/types';
+import {EFFORTS} from '../shared/types';
+import {createProject, importAsset, listProjects, mainContext, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, removeAsset, updateAsset, validateBrief, writeSettings, queueAsset, essentialAsset} from './project';
 import {ffmpegDir, prepareMaterial, probe} from './media';
 import {Processes, claudeExecutable} from './processes';
 import {extractFrames} from './frames';
 import {ensureWhisper, transcribeMissing, writeAlignedTranscripts, type Stoppable} from './transcribe';
 import {Claude} from './claude';
+import {claudeOptions} from './claude-options';
 import {Remotion} from './remotion';
+import {Terminal} from './terminal';
+import {STUDIO_EMBED} from './studio-embed';
 
 let window: BrowserWindow;
 let project: Project | null = null;
@@ -21,7 +25,7 @@ let lastRender: string | null = null;
 let library = '';
 let projects: ProjectSummary[] = [];
 let media: Stoppable | undefined;
-let settings: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: ''};
+let settings: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: '', effort: ''};
 const whisperHome = () => path.join(app.getPath('userData'), 'whisper');
 const logs: string[] = [];
 const processes = new Processes();
@@ -34,9 +38,20 @@ const log = (text: string) => {
   if (logs.length > 300) logs.shift();
   emit({type: 'log', text: clean});
 };
-const state = (): State => ({project, root, previewUrl: remotion.url, claudeBusy: Boolean(claude.job) || task === 'Claude', task, settings, logs, lastRender, library, projects});
+const state = (): State => ({project, root, previewUrl: remotion.url, claudeBusy: Boolean(claude.job) || task === 'Claude', task, settings, logs, lastRender, library, projects, commands: terminal.commands()});
 const changed = () => emit({type: 'state', state: state()});
-const claude = new Claude(processes, emit, log, changed);
+// Agent commands that need approval wait here; the dialog is modal to the main window.
+async function approveCommand(record: CommandRecord) {
+  if (!window || window.isDestroyed()) return false;
+  if (window.isMinimized()) window.restore();
+  window.focus();
+  const answer = await dialog.showMessageBox(window, {type: 'warning', buttons: ['Negar', 'Permitir uma vez'], defaultId: 0, cancelId: 0, noLink: true,
+    title: 'Confirmar comando', message: 'Claude quer executar um comando que precisa da sua confirmação.',
+    detail: `${record.command.slice(0, 2000)}\n\nPasta: ${record.cwd}\nMotivo: ${record.reasons.join('; ')}`});
+  return answer.response === 1;
+}
+const terminal = new Terminal(processes, emit, () => changed(), approveCommand);
+const claude = new Claude(processes, emit, log, changed, () => terminal.bridge);
 const remotion = new Remotion(processes, log, changed);
 async function refreshProjects() {
   projects = await listProjects(library);
@@ -69,6 +84,7 @@ async function activate(nextRoot: string, next: Project) {
   root = nextRoot;
   lastRender = null;
   logs.length = 0;
+  await terminal.open(nextRoot);
   changed();
 }
 function registerIPC() {
@@ -96,6 +112,7 @@ function registerIPC() {
   }));
   handle('close', () => runTask('Fechando projeto', async () => {
     await remotion.stopStudio();
+    await terminal.open(null);
     project = null;
     root = null;
     lastRender = null;
@@ -115,15 +132,14 @@ function registerIPC() {
     await persist(root, project);
     await writeSettings(root, next);
   }));
-  handle('import', (kind: AssetKind, note: string, relevant: boolean) => runTask('Importando assets', async () => {
+  const kinds: AssetKind[] = ['main', 'logo', 'image', 'video', 'audio', 'font', 'reference', 'document'];
+  async function importFiles(kind: AssetKind, note: string, sources: string[]) {
     const {root, project} = current();
-    if (typeof note !== 'string' || note.length > 10000 || typeof relevant !== 'boolean') throw new Error('Descrição inválida.');
+    if (typeof note !== 'string' || note.length > 10000) throw new Error('Descrição inválida.');
+    if (!kinds.includes(kind)) throw new Error('Tipo de arquivo inválido.');
     const videos = kind === 'main' || kind === 'video';
-    const selected = await dialog.showOpenDialog(window, {title: kind === 'main' ? 'Adicionar vídeo principal' : 'Adicionar arquivos ao projeto', properties: ['openFile', 'multiSelections'],
-      filters: videos ? [{name: 'Vídeos', extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi']}, {name: 'Todos os arquivos', extensions: ['*']}] : undefined});
-    if (selected.canceled) return;
-    for (const source of selected.filePaths) {
-      await importAsset(root, project, source, kind, note, relevant);
+    for (const source of sources) {
+      await importAsset(root, project, source, kind, note);
       if (!videos) continue;
       // Duration is optional metadata here; the material step probes again before using it.
       try {
@@ -133,6 +149,37 @@ function registerIPC() {
         await persist(root, project);
       } catch {}
     }
+  }
+  handle('import', (kind: AssetKind, note: string) => runTask('Importando assets', async () => {
+    current();
+    const videos = kind === 'main' || kind === 'video';
+    const selected = await dialog.showOpenDialog(window, {title: kind === 'main' ? 'Adicionar vídeo principal' : 'Adicionar arquivos ao projeto', properties: ['openFile', 'multiSelections'],
+      filters: videos ? [{name: 'Vídeos', extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi']}, {name: 'Todos os arquivos', extensions: ['*']}] : undefined});
+    if (selected.canceled) return;
+    await importFiles(kind, note, selected.filePaths);
+  }));
+  // Picking and importing are split so the UI can ask for the type and usage after choosing files.
+  handle('pickFiles', async () => {
+    current();
+    const selected = await dialog.showOpenDialog(window, {title: 'Adicionar arquivos ao projeto', properties: ['openFile', 'multiSelections']});
+    return selected.canceled ? [] : selected.filePaths;
+  });
+  handle('importFiles', (kind: AssetKind, note: string, sources: string[]) => runTask('Importando assets', async () => {
+    if (!Array.isArray(sources) || sources.length > 200 || sources.some(s => typeof s !== 'string' || !path.isAbsolute(s))) throw new Error('Arquivos inválidos.');
+    for (const source of sources) if (!(await fs.stat(source)).isFile()) throw new Error(`Não é um arquivo: ${source}`);
+    await importFiles(kind, note, sources);
+  }));
+  handle('queueAsset', (id: string, pending: boolean) => runTask('Atualizando contexto', async () => {
+    const {root, project} = current();
+    if (typeof pending !== 'boolean') throw new Error('Estado inválido.');
+    queueAsset(project, id, pending);
+    await persist(root, project);
+  }));
+  handle('essentialAsset', (id: string, essential: boolean) => runTask('Atualizando referência', async () => {
+    const {root, project} = current();
+    if (typeof essential !== 'boolean') throw new Error('Estado inválido.');
+    essentialAsset(project, id, essential);
+    await persist(root, project);
   }));
   handle('updateAsset', (id: string, patch: AssetPatch) => runTask('Salvando arquivo', async () => {
     const {root, project} = current();
@@ -165,7 +212,7 @@ function registerIPC() {
     changed();
     try {
       if (await prepareMaterial(root, project, processes, log, job => {media = job;})) {
-        project.changes.push({id: randomUUID(), relevant: true, text: materialContext(project)});
+        project.changes.push({id: randomUUID(), relevant: true, text: `[Material principal preparado]\n${mainContext(project)}`});
         await persist(root, project);
       }
       if (settings.transcribe) {
@@ -195,22 +242,24 @@ function registerIPC() {
         }
       }
     } finally {media = undefined; task = 'Claude'; changed();}
-    await claude.send(root, project, text, settings.claudePath, settings.model);
+    await claude.send(root, project, text, settings.claudePath, settings.model, settings.effort);
   }));
   handle('stop', async () => {
     claude.job?.stop();
     remotion.operation?.stop();
     media?.stop();
+    await terminal.stopAll();
     if (task && !claude.job && !remotion.operation && !media) await remotion.stopStudio();
     log('Interrupção solicitada.');
   });
   handle('reset', () => runTask('Nova sessão', async () => {
     const {root, project} = current();
     const answer = await dialog.showMessageBox(window, {type: 'question', buttons: ['Cancelar', 'Nova sessão'], defaultId: 0, cancelId: 0,
-      message: 'Iniciar uma nova conversa?', detail: 'Os arquivos e o histórico permanecem. O próximo pedido receberá o contexto completo atualizado.'});
+      message: 'Iniciar uma nova conversa?', detail: 'Histórico preservado. O próximo pedido recebe o briefing, alterações pendentes e referências essenciais fixadas.'});
     if (answer.response !== 1) return;
     project.session = {initialSent: false};
-    project.messages.push({id: randomUUID(), role: 'system', text: 'Nova sessão: o próximo pedido receberá o contexto atual completo.', at: new Date().toISOString()});
+    project.pendingAssetIds = [...new Set([...(project.pendingAssetIds ?? []), ...(project.essentialAssetIds ?? [])])];
+    project.messages.push({id: randomUUID(), role: 'system', text: 'Nova sessão: briefing, atualizações pendentes e referências essenciais serão reapresentados no próximo pedido.', at: new Date().toISOString()});
     await persist(root, project);
   }));
   handle('preview', () => runTask('Iniciando preview', async () => {await remotion.preview(current().root, settings);}));
@@ -230,13 +279,41 @@ function registerIPC() {
     log(`Vídeo concluído: ${output}`);
   }));
   handle('reveal', async () => {if (lastRender) shell.showItemInFolder(lastRender); else await shell.openPath(current().root);});
+  handle('openRender', async () => {
+    if (!lastRender) throw new Error('Nenhum vídeo renderizado nesta sessão.');
+    const failure = await shell.openPath(lastRender);
+    if (failure) throw new Error(failure);
+  });
+  // Terminal: the user's shell and agent command history. Allowed while other work runs.
+  const size = (value: unknown, max: number) => Number.isInteger(value) && (value as number) > 0 && (value as number) <= max;
+  handle('ptyStart', (cols: number, rows: number) => {
+    if (!size(cols, 1000) || !size(rows, 500)) throw new Error('Tamanho de terminal inválido.');
+    return terminal.ptyStart(cols, rows);
+  });
+  handle('ptyWrite', (data: string) => {if (typeof data === 'string' && data.length <= 100_000) terminal.ptyWrite(data);});
+  handle('ptyResize', (cols: number, rows: number) => {if (size(cols, 1000) && size(rows, 500)) terminal.ptyResize(cols, rows);});
+  handle('ptyRestart', () => terminal.killPty());
+  handle('commandOutput', (id: string) => terminal.output(id));
+  handle('stopCommand', async (id: string) => {await terminal.stop(id);});
+  handle('clearCommands', () => terminal.clear());
   handle('settings', (next: Settings) => runTask('Salvando ferramentas', async () => {
     for (const key of ['claudePath', 'nodePath', 'npmPath'] as const) {
       if (typeof next?.[key] !== 'string' || next[key].length > 4096) throw new Error('Caminho inválido.');
     }
     if (typeof next.transcribe !== 'boolean' || typeof next.frames !== 'boolean') throw new Error('Opção inválida.');
-    if (typeof next.model !== 'string' || !/^[w.[]-]{0,100}$/.test(next.model.trim())) throw new Error('Modelo inválido.');
-    settings = {claudePath: next.claudePath.trim(), nodePath: next.nodePath.trim(), npmPath: next.npmPath.trim(), transcribe: next.transcribe, frames: next.frames, model: next.model.trim()};
+    if (typeof next.model !== 'string' || !/^[\w.[\]-]{0,100}$/.test(next.model.trim())) throw new Error('Modelo inválido.');
+    if (!EFFORTS.includes(next.effort)) throw new Error('Esforço inválido.');
+    settings = {claudePath: next.claudePath.trim(), nodePath: next.nodePath.trim(), npmPath: next.npmPath.trim(), transcribe: next.transcribe, frames: next.frames, model: next.model.trim(), effort: next.effort};
+    await fs.writeFile(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings));
+  }));
+  handle('claudeOptions', () => claudeOptions(processes, settings.claudePath));
+  handle('claudePreference', (model: string, effort: string) => runTask('Configurando Claude', async () => {
+    const available = await claudeOptions(processes, settings.claudePath);
+    // Preserve a custom full model ID already saved by an older FramePilot version.
+    // CLI --help only enumerates aliases, although --model also accepts full IDs.
+    if ((!available.models.some(m => m.value === model) && model !== settings.model)
+      || !available.efforts.includes(effort)) throw new Error('Opção não anunciada pelo Claude Code instalado.');
+    settings = {...settings, model, effort};
     await fs.writeFile(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings));
   }));
   handle('check', () => runTask('Verificando ferramentas', async () => {
@@ -266,14 +343,17 @@ function registerIPC() {
   }));
 }
 
-// fp-media://asset/<id> streams the current project's originals to the trim editor, with byte ranges for seeking.
+// fp-media://asset/<id> streams the current project's originals to the trim editor and asset thumbnails, with byte ranges for seeking.
 protocol.registerSchemesAsPrivileged([{scheme: 'fp-media', privileges: {standard: true, secure: true, stream: true, supportFetchAPI: true}}]);
-const mediaTypes: Record<string, string> = {'.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.mkv': 'video/x-matroska'};
+const mediaTypes: Record<string, string> = {'.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif'};
 async function serveMedia(request: Request) {
   const id = decodeURIComponent(new URL(request.url).pathname.slice(1));
-  const asset = project?.assets.find(a => a.id === id && (a.kind === 'main' || a.kind === 'video'));
+  const asset = project?.assets.find(a => a.id === id && ['main', 'video', 'image', 'logo'].includes(a.kind));
   if (!asset || !root) return new Response(null, {status: 404});
   const file = path.resolve(root, asset.path);
+  // Images are served for thumbnails only; SVG and unknown types stay out.
+  if (['image', 'logo'].includes(asset.kind) && !mediaTypes[path.extname(file).toLowerCase()]?.startsWith('image/')) return new Response(null, {status: 415});
   if (!file.startsWith(path.resolve(root) + path.sep)) return new Response(null, {status: 403});
   const {size} = await fs.stat(file);
   const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') ?? '');
@@ -294,6 +374,7 @@ app.whenReady().then(async () => {
   try {
     const saved = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
     for (const key of ['claudePath', 'nodePath', 'npmPath', 'model'] as const) if (typeof saved[key] === 'string') settings[key] = saved[key];
+    if (EFFORTS.includes(saved.effort)) settings.effort = saved.effort;
     for (const key of ['transcribe', 'frames'] as const) if (typeof saved[key] === 'boolean') settings[key] = saved[key];
   } catch {}
   window = new BrowserWindow({width: 1440, height: 940, minWidth: 1000, minHeight: 700, title: 'FramePilot',
@@ -306,6 +387,14 @@ app.whenReady().then(async () => {
     try {if (!remotion.url || new URL(event.url).origin !== new URL(remotion.url).origin) event.preventDefault();}
     catch {event.preventDefault();}
   });
+  // The preview's clean player mode is driven by a small script inside the Studio frame.
+  window.webContents.on('did-frame-finish-load', (_event, isMainFrame, processId, routingId) => {
+    if (isMainFrame || !remotion.url) return;
+    const frame = webFrameMain.fromId(processId, routingId);
+    if (!frame || frame.origin !== new URL(remotion.url).origin) return;
+    frame.executeJavaScript(STUDIO_EMBED).catch(error => log(`Player do preview indisponível: ${(error as Error).message}`));
+  });
+  try {await terminal.listen();} catch (error) {log(`Terminal dos agentes indisponível: ${(error as Error).message}`);}
   registerIPC();
   if (process.env.ELECTRON_RENDERER_URL) await window.loadURL(process.env.ELECTRON_RENDERER_URL);
   else await window.loadFile(path.join(__dirname, '../renderer/index.html'));
@@ -315,6 +404,6 @@ app.on('before-quit', event => {
   if (quitting) return;
   event.preventDefault();
   quitting = true;
-  void (async () => {await processes.stopAll(); await Promise.allSettled([...inFlight]); app.quit();})();
+  void (async () => {await terminal.dispose(); await processes.stopAll(); await Promise.allSettled([...inFlight]); app.quit();})();
 });
 app.on('window-all-closed', () => app.quit());

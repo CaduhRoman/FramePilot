@@ -13,7 +13,8 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
-    "cross-spawn": "7.0.6"
+    "cross-spawn": "7.0.6",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
@@ -21,6 +22,8 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.4.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "electron": "^38.8.6",
     "electron-builder": "^26.0.0",
     "electron-vite": "^4.0.0",
@@ -52,7 +55,10 @@
       "target": "AppImage",
       "icon": "favicon.png"
     },
-    "icon": "favicon.png"
+    "icon": "favicon.png",
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ]
   },
   "allowScripts": {
     "electron@38.8.6": true,

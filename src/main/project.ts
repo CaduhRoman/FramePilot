@@ -6,6 +6,16 @@ import type {AssetKind, AssetPatch, Brief, Project, ProjectSummary, Segment} fro
 
 export const REMOTION_VERSION = '4.0.533';
 export const kinds: AssetKind[] = ['main', 'logo', 'image', 'video', 'audio', 'font', 'reference', 'document'];
+export function queueAsset(project: Project, id: string, pending: boolean) {
+  if (!project.assets.some(a => a.id === id)) throw new Error('Arquivo não encontrado.');
+  project.pendingAssetIds = (project.pendingAssetIds ?? []).filter(x => x !== id);
+  if (pending) project.pendingAssetIds.push(id);
+}
+export function essentialAsset(project: Project, id: string, essential: boolean) {
+  if (!project.assets.some(a => a.id === id)) throw new Error('Arquivo não encontrado.');
+  project.essentialAssetIds = (project.essentialAssetIds ?? []).filter(x => x !== id);
+  if (essential) project.essentialAssetIds.push(id);
+}
 export function clock(t: number) {
   const ms = Math.round(t * 1000);
   const h = Math.floor(ms / 3_600_000), m = Math.floor(ms / 60_000) % 60, s = (ms % 60_000) / 1000;
@@ -84,6 +94,7 @@ export async function updateAsset(root: string, project: Project, id: string, pa
   if (patch.note !== undefined) {
     if (typeof patch.note !== 'string' || patch.note.length > 10000) throw new Error('Descrição inválida.');
     if (patch.note !== a.note && a.kind !== 'main') notes.push(`Nova descrição de ${a.path}: ${patch.note}`);
+    if (patch.note !== a.note) queueAsset(project, id, true);
     a.note = patch.note;
   }
   if (patch.kind !== undefined && patch.kind !== a.kind) {
@@ -103,13 +114,15 @@ export async function updateAsset(root: string, project: Project, id: string, pa
     if (!['main', 'video'].includes(a.kind)) throw new Error('Recortes só se aplicam a vídeos.');
     a.segments = validateSegments(patch.segments, a.duration);
   }
-  if (notes.length) project.changes.push({id: randomUUID(), relevant: true, text: notes.join('\n')});
+  if (notes.length || patch.segments !== undefined) queueAsset(project, id, true);
   await persist(root, project);
 }
 export async function removeAsset(root: string, project: Project, id: string) {
   const index = project.assets.findIndex(x => x.id === id);
   if (index < 0) throw new Error('Arquivo não encontrado.');
   const [a] = project.assets.splice(index, 1);
+  project.pendingAssetIds = (project.pendingAssetIds ?? []).filter(x => x !== id);
+  project.essentialAssetIds = (project.essentialAssetIds ?? []).filter(x => x !== id);
   await fs.rm(inside(root, a.path), {force: true});
   if (a.publicPath) await fs.rm(inside(path.join(root, 'remotion/public'), a.publicPath), {force: true});
   // Main videos and cut auxiliaries are reported with the next material update.
@@ -200,10 +213,37 @@ O contexto completo é entregue no primeiro pedido da sessão; depois apenas del
 }
 export function promptFor(project: Project, request: string) {
   const changes = project.changes.filter(c => c.relevant);
+  const assetIds = (project.pendingAssetIds ?? []).filter(id => project.assets.some(a => a.id === id));
   const prefix = project.session.initialSent
     ? (changes.length ? `[NEW PROJECT CONTEXT]\n${changes.map(c => c.text).join('\n\n')}\n\n` : '')
-    : `[INITIAL PROJECT CONTEXT]\n${context(project)}\n`;
-  return {prompt: `${prefix}[USER REQUEST]\n${request}`, changeIds: project.changes.map(c => c.id)};
+    : `[INITIAL PROJECT CONTEXT]\n${sessionContext(project)}\n${changes.length ? `\n[PROJECT UPDATES]\n${changes.map(c => c.text).join('\n\n')}\n` : ''}`;
+  const attachments = assetIds.length ? `[REFERÊNCIAS DISPONIBILIZADAS NESTE PEDIDO — leitura não confirmada]\n${assetContext(project, assetIds)}\n\n` : '';
+  return {prompt: `${prefix}${attachments}[USER REQUEST]\n${request}`, changeIds: changes.map(c => c.id), assetIds};
+}
+
+/** Core instructions travel with a new session; asset inventory and heavy transcripts do not. */
+function sessionContext(project: Project) {
+  const b = project.brief;
+  return `FramePilot — projeto local de edição Remotion.
+Nome: ${b.name}; objetivo: ${b.briefing}; visual: ${b.style}; observações: ${b.notes}.
+Formato: ${b.width}x${b.height}, ${b.fps} FPS, ${b.duration}s.
+Edite remotion/src diretamente. Use a composição Main e remotion/src/project-settings.json.
+Use Video/Audio de @remotion/media e premountFor={fps} em Sequences com mídia. Evite frames pretos e duplicar áudio.
+Mantenha a edição determinística; não execute render ou servidores, nem instale dependências: o FramePilot cuida disso.
+Leia .claude/skills/video-craft/SKILL.md e craft.md e outras skills relevantes antes de editar.
+Arquivos originais ficam em assets/ e references/; recortes preparados ficam em remotion/public/.
+Os anexos enviados oferecem caminhos e metadados; utilize Read ou ferramentas apropriadas para analisar o conteúdo.
+project.json e CONTEXT.md são gerenciados pelo app, não os altere. Responda brevemente em português.`;
+}
+export function assetContext(project: Project, ids: string[]) {
+  return ids.map(id => project.assets.find(a => a.id === id)).filter((a): a is Project['assets'][number] => Boolean(a)).map(a => {
+    const prepared = project.material?.parts.find(p => p.kind === 'aux' && p.assetId === a.id);
+    const video = a.kind === 'main'
+      ? '\n  Vídeo principal: use partes preparadas de remotion/public/main e respeite os recortes selecionados.'
+      : prepared ? `\n  Recorte: staticFile(${JSON.stringify(prepared.file)}) (${prepared.duration.toFixed(2)}s).`
+      : a.publicPath ? `\n  Em Remotion: staticFile(${JSON.stringify(a.publicPath)}).` : '';
+    return `- [${a.kind}] ${a.name}\n  Caminho local relativo à raiz: ${a.path}${a.note ? `\n  Descrição: ${a.note}` : ''}${a.duration ? `\n  Duração: ${a.duration.toFixed(2)}s` : ''}${video}`;
+  }).join('\n');
 }
 
 // Serialize all metadata writes; an older save must never overwrite newer session state.
@@ -229,7 +269,7 @@ export async function createProject(root: string, input: Brief): Promise<Project
     await fs.mkdir(path.join(root, dir), {recursive: true});
   }
   const project: Project = {version: 1, id: randomUUID(), brief, assets: [], changes: [],
-    session: {initialSent: false}, messages: []};
+    session: {initialSent: false}, messages: [], pendingAssetIds: [], essentialAssetIds: []};
   await fs.writeFile(path.join(root, 'remotion/package.json'), JSON.stringify({
     name: 'framepilot-video', private: true, version: '1.0.0',
     scripts: {studio: 'remotion studio src/index.ts', render: 'remotion render src/index.ts Main'},
@@ -273,10 +313,24 @@ export async function openProject(root: string): Promise<Project> {
   if (p.version !== 1 || typeof p.id !== 'string' || !Array.isArray(p.assets) || !Array.isArray(p.changes)
     || !Array.isArray(p.messages) || typeof p.session?.initialSent !== 'boolean') throw new Error('Projeto FramePilot inválido.');
   p.brief = validateBrief(p.brief);
+  const migrated = !Array.isArray(p.pendingAssetIds) || !Array.isArray(p.essentialAssetIds);
+  if (!Array.isArray(p.pendingAssetIds)) {
+    p.pendingAssetIds = p.session.initialSent ? p.assets.filter(a => p.changes.some(c => c.relevant && c.text.startsWith('Novo ') && c.text.includes(a.path))).map(a => a.id)
+      : p.assets.map(a => a.id);
+    p.changes = p.changes.filter(c => !c.text.startsWith('Novo '));
+  }
+  p.pendingAssetIds = [...new Set(p.pendingAssetIds)].filter(id => p.assets.some(a => a.id === id));
+  p.essentialAssetIds = Array.isArray(p.essentialAssetIds) ? p.essentialAssetIds.filter(id => p.assets.some(a => a.id === id)) : [];
+  let recoveredSend = false;
+  for (const message of p.messages) if (message.context?.status === 'sending') {
+    message.context.status = 'failed';
+    recoveredSend = true;
+  }
   if (p.session.id && !/^[a-f0-9-]{36}$/i.test(p.session.id)) throw new Error('ID de sessão inválido.');
   await fs.access(path.join(root, 'remotion/src/index.ts'));
   await ensureProjectSkills(root);
   await ensureMediaPlayback(root, p);
+  if (recoveredSend || migrated) await persist(root, p);
   return p;
 }
 const MEDIA_NOTE = 'Atualização do harness: o preview passou a usar @remotion/media.';
@@ -295,7 +349,7 @@ async function ensureMediaPlayback(root: string, p: Project) {
     + 'adicione premountFor={fps} às Sequences com mídia; mantenha instâncias duplicadas só se o efeito exigir (uma delas muted). Não mude o resultado visual.'});
   await persist(root, p);
 }
-export async function importAsset(root: string, project: Project, source: string, kind: AssetKind, note: string, relevant: boolean) {
+export async function importAsset(root: string, project: Project, source: string, kind: AssetKind, note: string) {
   if (!kinds.includes(kind)) throw new Error('Tipo de asset inválido.');
   const name = path.basename(source);
   const safeName = name.replace(/[^\p{L}\p{N}._-]/gu, '_');
@@ -307,8 +361,7 @@ export async function importAsset(root: string, project: Project, source: string
   const publicPath = folder === 'assets' && kind !== 'main' ? relative : undefined;
   if (publicPath) await fs.copyFile(source, path.join(root, 'remotion/public', publicPath));
   project.assets.push({id, name, path: relative, kind, note, publicPath});
-  if (kind !== 'main') project.changes.push({id: randomUUID(), relevant,
-    text: `Novo ${kind}: ${relative}.${publicPath ? ` Use staticFile(${JSON.stringify(publicPath)}).` : ''}\n${note}`});
+  queueAsset(project, id, true);
   await persist(root, project);
 }
 
