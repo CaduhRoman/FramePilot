@@ -172,7 +172,7 @@ export function ChatPanel({project, settings, choices, stream, claudeBusy, busy,
       {behind && <Button className="jump" icon="down" onClick={() => {const el = list.current!; el.scrollTop = el.scrollHeight; pinned.current = true; setBehind(false);}}>Novas mensagens</Button>}
     </div>
 
-    {working && <div className="activity" role="status"><span className="spinner" aria-hidden="true" /><span>Claude está editando…</span>
+    {working && <div className="activity" role="status"><span className="spinner" aria-hidden="true" /><span>{settings.engine === 'opencode' ? 'OpenCode' : 'Claude'} está editando…</span>
       <Button variant="danger" icon="stop" onClick={() => void act(api.stop)}>Interromper</Button></div>}
 
     <form className="composer" onSubmit={e => {e.preventDefault(); submit();}}>

@@ -4,11 +4,12 @@ import {Readable} from 'node:stream';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {AppEvent, AssetKind, AssetPatch, Brief, CommandRecord, Project, ProjectSummary, Settings, State} from '../shared/types';
-import {EFFORTS} from '../shared/types';
+import type {AgentEngine, AppEvent, AssetKind, AssetPatch, Brief, ClaudeOptions, CommandRecord, LoginKind, Project, ProjectSummary, Settings, State} from '../shared/types';
+import {DEFAULT_SETTINGS, EFFORTS} from '../shared/types';
 import {createProject, importAsset, listProjects, mainContext, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, removeAsset, updateAsset, validateBrief, writeSettings, queueAsset, essentialAsset} from './project';
 import {ffmpegDir, prepareMaterial, probe} from './media';
-import {Processes, claudeExecutable} from './processes';
+import {Processes, claudeExecutable, opencodeExecutable} from './processes';
+import {LoginShell, opencodeModels, providerStatus} from './providers';
 import {extractFrames} from './frames';
 import {ensureWhisper, transcribeMissing, writeAlignedTranscripts, type Stoppable} from './transcribe';
 import {Claude} from './claude';
@@ -25,7 +26,11 @@ let lastRender: string | null = null;
 let library = '';
 let projects: ProjectSummary[] = [];
 let media: Stoppable | undefined;
-let settings: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: '', effort: ''};
+let settings: Settings = {...DEFAULT_SETTINGS};
+const saveSettings = () => fs.writeFile(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings));
+/** provider/model as listed by `opencode models`. */
+const MODEL_ID = /^[\w.-]+\/[\w.:@/-]{1,200}$/;
+const login = new LoginShell(event => emit(event));
 const whisperHome = () => path.join(app.getPath('userData'), 'whisper');
 const logs: string[] = [];
 const processes = new Processes();
@@ -242,7 +247,7 @@ function registerIPC() {
         }
       }
     } finally {media = undefined; task = 'Claude'; changed();}
-    await claude.send(root, project, text, settings.claudePath, settings.model, settings.effort);
+    await claude.send(root, project, text, settings);
   }));
   handle('stop', async () => {
     claude.job?.stop();
@@ -303,22 +308,58 @@ function registerIPC() {
     if (typeof next.transcribe !== 'boolean' || typeof next.frames !== 'boolean') throw new Error('Opção inválida.');
     if (typeof next.model !== 'string' || !/^[\w.[\]-]{0,100}$/.test(next.model.trim())) throw new Error('Modelo inválido.');
     if (!EFFORTS.includes(next.effort)) throw new Error('Esforço inválido.');
-    settings = {claudePath: next.claudePath.trim(), nodePath: next.nodePath.trim(), npmPath: next.npmPath.trim(), transcribe: next.transcribe, frames: next.frames, model: next.model.trim(), effort: next.effort};
-    await fs.writeFile(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings));
+    if (typeof next.opencodePath !== 'string' || next.opencodePath.length > 4096) throw new Error('Caminho inválido.');
+    // Engine and OpenCode model change only through the connect screen or the chat options.
+    settings = {...settings, claudePath: next.claudePath.trim(), nodePath: next.nodePath.trim(), npmPath: next.npmPath.trim(), opencodePath: next.opencodePath.trim(),
+      transcribe: next.transcribe, frames: next.frames, model: next.model.trim(), effort: next.effort};
+    await saveSettings();
   }));
-  handle('claudeOptions', () => claudeOptions(processes, settings.claudePath));
-  handle('claudePreference', (model: string, effort: string) => runTask('Configurando Claude', async () => {
+  async function engineOptions(): Promise<ClaudeOptions> {
+    if (settings.engine !== 'opencode') return claudeOptions(processes, settings.claudePath);
+    try {
+      const models = await opencodeModels(processes, settings);
+      return {models: models.map(value => ({value, label: value})), efforts: [''], notice: 'Modelos do OpenCode disponíveis com as credenciais deste computador.'};
+    } catch (error) {return {models: [{value: settings.opencodeModel, label: settings.opencodeModel}], efforts: [''], notice: (error as Error).message};}
+  }
+  handle('claudeOptions', engineOptions);
+  handle('claudePreference', (model: string, effort: string) => runTask('Configurando IA', async () => {
+    if (settings.engine === 'opencode') {
+      if (typeof model !== 'string' || !MODEL_ID.test(model) || !(await opencodeModels(processes, settings)).includes(model)) throw new Error('Modelo não disponível no OpenCode.');
+      settings = {...settings, opencodeModel: model};
+      await saveSettings();
+      return;
+    }
     const available = await claudeOptions(processes, settings.claudePath);
     // Preserve a custom full model ID already saved by an older FramePilot version.
     // CLI --help only enumerates aliases, although --model also accepts full IDs.
     if ((!available.models.some(m => m.value === model) && model !== settings.model)
       || !available.efforts.includes(effort)) throw new Error('Opção não anunciada pelo Claude Code instalado.');
     settings = {...settings, model, effort};
-    await fs.writeFile(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings));
+    await saveSettings();
   }));
+  // First-run connect screen. Status and models are read-only and allowed while other work runs.
+  handle('providers', () => providerStatus(processes, settings));
+  handle('opencodeModels', () => opencodeModels(processes, settings));
+  handle('connect', (engine: AgentEngine, model?: string) => runTask('Conectando IA', async () => {
+    if (engine !== 'claude' && engine !== 'opencode') throw new Error('Provedor inválido.');
+    if (engine === 'opencode' && (typeof model !== 'string' || !MODEL_ID.test(model))) throw new Error('Modelo inválido.');
+    login.stop();
+    settings = {...settings, engine, ...(engine === 'opencode' ? {opencodeModel: model!} : {})};
+    await saveSettings();
+    log(engine === 'claude' ? 'IA conectada: Claude Code.' : `IA conectada: OpenCode (${model}).`);
+  }));
+  const logins: LoginKind[] = ['claude', 'opencode-openai', 'opencode-copilot', 'opencode-other', 'install-opencode'];
+  handle('loginStart', (kind: LoginKind, cols: number, rows: number) => {
+    if (!logins.includes(kind) || !size(cols, 1000) || !size(rows, 500)) throw new Error('Login inválido.');
+    return login.start(kind, settings, cols, rows);
+  });
+  handle('loginWrite', (data: string) => {if (typeof data === 'string' && data.length <= 100_000) login.write(data);});
+  handle('loginResize', (cols: number, rows: number) => {if (size(cols, 1000) && size(rows, 500)) login.resize(cols, rows);});
+  handle('loginStop', () => login.stop());
   handle('check', () => runTask('Verificando ferramentas', async () => {
     const results: string[] = [];
-    for (const [name, command] of [['Node', settings.nodePath || 'node'], ['npm', settings.npmPath || 'npm'], ['Claude', claudeExecutable(settings.claudePath)]]) {
+    const agent = settings.engine === 'opencode' ? ['OpenCode', opencodeExecutable(settings.opencodePath)] : ['Claude', claudeExecutable(settings.claudePath)];
+    for (const [name, command] of [['Node', settings.nodePath || 'node'], ['npm', settings.npmPath || 'npm'], agent]) {
       const job = processes.start(command, ['--version'], app.getPath('userData'));
       job.child.stdin?.end();
       let output = '';
@@ -337,7 +378,9 @@ function registerIPC() {
       } catch (error) {results.push(`Whisper: falhou — ${(error as Error).message}`);}
       finally {media = undefined;}
     }
-    const result = results.join('\n') + '\nO login do Claude será validado no primeiro pedido. Se necessário, execute claude uma vez para autenticar.';
+    const result = results.join('\n') + (settings.engine === 'opencode'
+      ? `\nModelo do OpenCode: ${settings.opencodeModel}. O acesso é validado no primeiro pedido.`
+      : '\nO login do Claude será validado no primeiro pedido. Se necessário, execute claude uma vez para autenticar.');
     log(result);
     return result;
   }));
@@ -373,8 +416,10 @@ app.whenReady().then(async () => {
   try {await fs.mkdir(library, {recursive: true}); projects = await listProjects(library);} catch {}
   try {
     const saved = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
-    for (const key of ['claudePath', 'nodePath', 'npmPath', 'model'] as const) if (typeof saved[key] === 'string') settings[key] = saved[key];
+    for (const key of ['claudePath', 'nodePath', 'npmPath', 'model', 'opencodePath'] as const) if (typeof saved[key] === 'string') settings[key] = saved[key];
     if (EFFORTS.includes(saved.effort)) settings.effort = saved.effort;
+    if (saved.engine === 'claude' || saved.engine === 'opencode') settings.engine = saved.engine;
+    if (typeof saved.opencodeModel === 'string' && MODEL_ID.test(saved.opencodeModel)) settings.opencodeModel = saved.opencodeModel;
     for (const key of ['transcribe', 'frames'] as const) if (typeof saved[key] === 'boolean') settings[key] = saved[key];
   } catch {}
   window = new BrowserWindow({width: 1440, height: 940, minWidth: 1000, minHeight: 700, title: 'FramePilot',
@@ -404,6 +449,7 @@ app.on('before-quit', event => {
   if (quitting) return;
   event.preventDefault();
   quitting = true;
+  login.stop();
   void (async () => {await terminal.dispose(); await processes.stopAll(); await Promise.allSettled([...inFlight]); app.quit();})();
 });
 app.on('window-all-closed', () => app.quit());

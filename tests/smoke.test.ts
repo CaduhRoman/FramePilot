@@ -6,6 +6,8 @@ import path from 'node:path';
 import {context, createProject, essentialAsset, importAsset, listProjects, mainContext, moveAsset, openProject, persist, projectFolder, promptFor, queueAsset, removeAsset, updateAsset, validateSegments} from '../src/main/project';
 import {Claude} from '../src/main/claude';
 import {Processes} from '../src/main/processes';
+import {DEFAULT_SETTINGS, type Settings} from '../src/shared/types';
+const claudeWith = (claudePath: string, extra: Partial<Settings> = {}): Settings => ({...DEFAULT_SETTINGS, engine: 'claude', claudePath, ...extra});
 
 const brief = {name: 'Teste', briefing: 'Editar clipes com trilha e legendas', width: 1920, height: 1080, fps: 30, duration: 5, style: 'Documental', notes: ''};
 
@@ -75,7 +77,7 @@ process.stdin.on('end', () => {
     if (process.platform === 'win32') await fs.writeFile(mock, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
     else await fs.chmod(mock, 0o755);
     const claude = new Claude(processes, () => {}, () => {}, () => {});
-    await claude.send(root, project, 'Primeiro pedido', mock, 'opus', 'low');
+    await claude.send(root, project, 'Primeiro pedido', claudeWith(mock, {model: 'opus', effort: 'low'}));
     assert.equal(project.session.id, session);
     assert.equal(project.session.initialSent, true);
     assert.equal(project.messages.at(-1)?.role, 'assistant');
@@ -83,7 +85,7 @@ process.stdin.on('end', () => {
     assert.deepEqual(project.messages[0].context?.assets.map(a => a.id), [assetId]);
     assert.deepEqual(project.pendingAssetIds, []);
     const reopened = await openProject(root);
-    await claude.send(root, reopened, 'Segundo pedido', mock);
+    await claude.send(root, reopened, 'Segundo pedido', claudeWith(mock));
     const calls = (await fs.readFile(path.join(root, 'calls.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.match(calls[0].prompt, /INITIAL PROJECT CONTEXT/);
     assert.match(calls[0].prompt, /Logo teste/);
@@ -93,12 +95,56 @@ process.stdin.on('end', () => {
     assert.deepEqual(calls[1].args.slice(-2), ['--resume', session]);
     queueAsset(reopened, assetId, true);
     await persist(root, reopened);
-    await claude.send(root, reopened, 'Outro pedido', path.join(base, 'missing-cli'));
+    await claude.send(root, reopened, 'Outro pedido', claudeWith(path.join(base, 'missing-cli')));
     assert.match(reopened.messages.at(-1)!.text, /Claude Code não encontrado/);
     assert.equal(reopened.messages.at(-2)?.context?.status, 'failed');
     assert.deepEqual(reopened.pendingAssetIds, [assetId], 'failed transmission keeps the attachment queued');
     assert.deepEqual((await openProject(root)).pendingAssetIds, [assetId]);
     assert.equal(claude.job, undefined);
+  } finally {await processes.stopAll(); await fs.rm(base, {recursive: true, force: true});}
+});
+
+test('OpenCode transport: JSON events, session resume, managed config, and provider switch restarts the session', async () => {
+  const base = await fs.mkdtemp(path.join(tmpdir(), 'framepilot-oc-'));
+  const processes = new Processes();
+  try {
+    const root = path.join(base, 'project');
+    const project = await createProject(root, brief);
+    project.session = {id: '00000000-0000-4000-8000-000000000009', initialSent: true};
+    const mock = path.join(base, process.platform === 'win32' ? 'mock-opencode.cmd' : 'mock-opencode');
+    const script = process.platform === 'win32' ? path.join(base, 'mock-opencode.js') : mock;
+    const session = 'ses_abcdef123456';
+    await fs.writeFile(script, `${process.platform === 'win32' ? '' : `#!${process.execPath}\n`}const fs = require('node:fs');
+let input = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', c => input += c);
+process.stdin.on('end', () => {
+ fs.appendFileSync('calls.jsonl', JSON.stringify({args: process.argv.slice(2), prompt: input, config: process.env.OPENCODE_CONFIG}) + '\\n');
+ const emit = x => console.log(JSON.stringify({...x, sessionID: '${session}'}));
+ emit({type:'step_start',part:{type:'step-start'}});
+ emit({type:'tool_use',part:{type:'tool',tool:'edit',state:{status:'completed',input:{filePath:'remotion/src/Video.tsx'}}}});
+ emit({type:'text',part:{type:'text',text:'Editado pelo OpenCode.'}});
+ emit({type:'step_finish',part:{type:'step-finish',reason:'stop'}});
+ if (input.includes('falhe')) { emit({type:'error',error:{name:'UnknownError',data:{message:'Limite do modelo gratuito'}}}); process.exit(1); }
+});\n`);
+    if (process.platform === 'win32') await fs.writeFile(mock, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+    else await fs.chmod(mock, 0o755);
+    const settings: Settings = {...DEFAULT_SETTINGS, engine: 'opencode', opencodePath: mock};
+    const agent = new Claude(processes, () => {}, () => {}, () => {});
+    await agent.send(root, project, 'Primeiro pedido', settings);
+    assert.equal(project.session.id, session);
+    assert.equal(project.session.engine, 'opencode');
+    assert.ok(project.messages.some(m => m.role === 'system' && /OpenCode/.test(m.text)), 'switching providers is announced');
+    assert.equal(project.messages.at(-1)?.text, 'Editado pelo OpenCode.');
+    await agent.send(root, project, 'Segundo pedido', settings);
+    await agent.send(root, project, 'por favor falhe', settings);
+    assert.match(project.messages.at(-2)!.text, /Limite do modelo gratuito/);
+    const calls = (await fs.readFile(path.join(root, 'calls.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    assert.match(calls[0].prompt, /INITIAL PROJECT CONTEXT/, 'new engine gets the full briefing');
+    assert.ok(calls[0].args.includes('--model') && calls[0].args.includes(DEFAULT_SETTINGS.opencodeModel));
+    assert.ok(!calls[0].args.includes('--session'));
+    assert.deepEqual(calls[1].args.slice(-2), ['--session', session]);
+    const config = JSON.parse(await fs.readFile(calls[0].config, 'utf8'));
+    assert.equal(config.permission.bash, 'deny');
+    assert.ok(config.mcp.framepilot.command.at(-1) === root);
   } finally {await processes.stopAll(); await fs.rm(base, {recursive: true, force: true});}
 });
 

@@ -19,6 +19,9 @@ export function claudeExecutable(custom: string) {
   const native = path.join(homedir(), '.local/bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
   return existsSync(native) ? native : 'claude';
 }
+export function opencodeExecutable(custom: string) {
+  return custom.trim() || 'opencode';
+}
 export interface Job {
   child: ChildProcess;
   done: Promise<number | null>;

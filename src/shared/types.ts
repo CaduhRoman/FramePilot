@@ -33,7 +33,8 @@ export interface Project {
   brief: Brief;
   assets: Asset[];
   changes: ContextChange[];
-  session: {id?: string; initialSent: boolean};
+  /** engine: which CLI owns the session ID; absent means Claude Code (older projects). */
+  session: {id?: string; initialSent: boolean; engine?: AgentEngine};
   messages: ChatMessage[];
   /** Persistent asset queue. Removing an ID does not remove the actual file. */
   pendingAssetIds?: string[];
@@ -46,7 +47,24 @@ export interface Project {
   frames?: string;
 }
 export interface ProjectSummary {root: string; name: string; width: number; height: number; duration: number; messages: number; hasSession: boolean; updatedAt: string}
-export interface Settings {claudePath: string; nodePath: string; npmPath: string; transcribe: boolean; frames: boolean; model: string; effort: string}
+/** '' until the user picks a provider on the first-run connect screen. */
+export type Engine = '' | AgentEngine;
+export type AgentEngine = 'claude' | 'opencode';
+/** Free model served by OpenCode Zen; no account needed. */
+export const FREE_MODEL = 'opencode/deepseek-v4.1-flash-free';
+export interface Settings {
+  claudePath: string; nodePath: string; npmPath: string; transcribe: boolean; frames: boolean; model: string; effort: string;
+  engine: Engine; opencodePath: string; opencodeModel: string;
+}
+export const DEFAULT_SETTINGS: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: '', effort: '',
+  engine: '', opencodePath: '', opencodeModel: FREE_MODEL};
+/** What the connect screen needs to know about each CLI. */
+export interface ProviderStatus {
+  claude: {installed: boolean; loggedIn: boolean; account?: string; method?: string};
+  opencode: {installed: boolean; version?: string; providers: string[]};
+}
+/** Interactive logins and installs run in a pseudo-terminal shown on the connect screen. */
+export type LoginKind = 'claude' | 'opencode-openai' | 'opencode-copilot' | 'opencode-other' | 'install-opencode';
 export const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 export interface ClaudeOptions {models: {value: string; label: string}[]; efforts: string[]; notice: string}
 /** A command run by an agent through FramePilot's terminal tools. Output is fetched separately. */
@@ -72,7 +90,7 @@ export interface State {
   commands: CommandRecord[];
 }
 export type AppEvent = {type: 'state'; state: State} | {type: 'log'; text: string} | {type: 'delta'; text: string}
-  | {type: 'pty'; data: string} | {type: 'command-output'; id: string; stream: 'stdout' | 'stderr'; text: string};
+  | {type: 'pty'; data: string} | {type: 'login'; data: string} | {type: 'login-exit'; code: number} | {type: 'command-output'; id: string; stream: 'stdout' | 'stderr'; text: string};
 export interface API {
   state(): Promise<State>;
   create(brief: Brief): Promise<void>;
@@ -104,6 +122,15 @@ export interface API {
   claudePreference(model: string, effort: string): Promise<void>;
   claudeOptions(): Promise<ClaudeOptions>;
   check(): Promise<string>;
+  providers(): Promise<ProviderStatus>;
+  /** Models OpenCode can use with the credentials on this machine (free models included). */
+  opencodeModels(): Promise<string[]>;
+  /** Saves the chosen engine (and OpenCode model) and leaves the connect screen. */
+  connect(engine: AgentEngine, model?: string): Promise<void>;
+  loginStart(kind: LoginKind, cols: number, rows: number): Promise<void>;
+  loginWrite(data: string): Promise<void>;
+  loginResize(cols: number, rows: number): Promise<void>;
+  loginStop(): Promise<void>;
   /** Starts (or reattaches to) the user's interactive shell; returns its scrollback. */
   ptyStart(cols: number, rows: number): Promise<string>;
   ptyWrite(data: string): Promise<void>;

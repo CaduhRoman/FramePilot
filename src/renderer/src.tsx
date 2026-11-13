@@ -1,6 +1,8 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {API, Asset, Brief, ClaudeOptions, Settings, State} from '../shared/types';
+import {DEFAULT_SETTINGS} from '../shared/types';
+import {ConnectDialog} from './Connect';
 import './style.css';
 import {Select} from './Select';
 import {AssetsPanel, NoteEditor} from './Assets';
@@ -45,7 +47,8 @@ function App() {
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'new' | 'brief' | null>(null);
   const [brief, setBrief] = useState<Brief>(defaults);
-  const [tools, setTools] = useState<Settings>({claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: '', effort: ''});
+  const [tools, setTools] = useState<Settings>({...DEFAULT_SETTINGS});
+  const [connecting, setConnecting] = useState(false);
   const [claudeChoices, setClaudeChoices] = useState<ClaudeOptions>();
   const [stream, setStream] = useState('');
   const [checking, setChecking] = useState('');
@@ -68,7 +71,7 @@ function App() {
   }, []);
   useEffect(() => {
     if (state) setTools({...state.settings});
-  }, [state?.settings.claudePath, state?.settings.nodePath, state?.settings.npmPath, state?.settings.transcribe, state?.settings.frames, state?.settings.model, state?.settings.effort]);
+  }, [state?.settings.claudePath, state?.settings.nodePath, state?.settings.npmPath, state?.settings.transcribe, state?.settings.frames, state?.settings.model, state?.settings.effort, state?.settings.opencodePath]);
   useEffect(() => {
     if (!state?.project || section !== 'create') return;
     let alive = true;
@@ -76,7 +79,7 @@ function App() {
     void api.claudeOptions().then(options => {if (alive) setClaudeChoices(options);})
       .catch(error => {if (alive) setClaudeChoices({models: [{value: '', label: 'Padrão'}], efforts: [''], notice: (error as Error).message});});
     return () => {alive = false;};
-  }, [Boolean(state?.project), state?.settings.claudePath, section]);
+  }, [Boolean(state?.project), state?.settings.claudePath, state?.settings.engine, state?.settings.opencodePath, section]);
   useEffect(() => {setImportFiles(null);}, [state?.root]);
   // Dropping a file anywhere else must not navigate the window.
   useEffect(() => {
@@ -102,6 +105,7 @@ function App() {
   const pick = () => void act(async () => {const paths = await api.pickFiles(); if (paths.length) setImportFiles(paths);});
   const send = (text: string) => {setStream(''); setSubmitting(true); void act(() => api.send(text)).finally(() => setSubmitting(false));};
   const onboarding = p && p.messages.length === 0 && !submitting && !state.claudeBusy && skipOnboarding !== state.root;
+  const engineLabel = state.settings.engine === 'opencode' ? `OpenCode · ${state.settings.opencodeModel}` : 'Claude Code';
   return <div className="app">
     <header className="app-header">
       <div className="brand"><span className="brand-mark"><img src={appLogo} alt="" /></span><div><strong>FramePilot</strong><small>Seu estúdio de vídeo</small></div></div>
@@ -136,7 +140,7 @@ function App() {
         <small>Editado {new Date(s.updatedAt).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'})}</small>
       </button></li>)}</ul>
     </main> : <main className="welcome"><span className="welcome-symbol"><Icon name="create" /></span><h2>Do material bruto ao vídeo final.</h2><p>Crie um projeto, adicione seus arquivos e descreva a edição no chat.</p>
-      <p>É preciso ter Node.js e o Claude Code instalado e autenticado. Os projetos ficam em {state.library}.</p>
+      <p>É preciso ter Node.js instalado. Os projetos ficam em {state.library}.</p>
       <Button variant="primary" disabled={busy} onClick={() => openBrief(true)}>Criar projeto de vídeo</Button></main> : <main className="workspace">
       <AssetsPanel project={p} root={state.root!} busy={busy} api={api} act={act} onEdit={setEditing} onSettings={() => openBrief(false)}
         importFiles={importFiles} setImportFiles={setImportFiles} onPick={pick} />
@@ -150,13 +154,18 @@ function App() {
     <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" className={`page settings-page ${section === 'settings' ? 'is-active' : ''}`} inert={section !== 'settings'}>
       <div className="section-heading"><h1>Configurações</h1><span className="local-badge">No seu computador</span></div>
       <main className="settings-content"><div className="settings-intro"><span className="welcome-symbol"><Icon name="settings" /></span><h2>Seu ambiente de criação.</h2><p>Conecte suas ferramentas locais. O FramePilot cuida do workflow.</p></div>
+      <section className="settings-card"><h2>Inteligência artificial</h2>
+        <p>Quem faz as edições dos seus vídeos. Troque quando quiser; a conversa de cada projeto recomeça com o briefing ao trocar de provedor.</p>
+        <code className="path">{engineLabel}</code>
+        <div className="row"><Button icon="spark" disabled={busy} onClick={() => setConnecting(true)}>Trocar IA</Button></div>
+      </section>
       <section className="settings-card"><h2>Ferramentas locais</h2>
         <p>Deixe em branco para detectar pelo PATH. Use o caminho do executável, sem argumentos.</p>
-        {(['claudePath', 'nodePath', 'npmPath'] as const).map(key => <label className="field" key={key}>{key === 'claudePath' ? 'Claude Code (claude.exe / claude)' : key === 'nodePath' ? 'Node.js (node.exe / node)' : 'npm (npm.cmd / npm)'}<input value={tools[key]} onChange={e => setTools({...tools, [key]: e.target.value})} /></label>)}
+        {(['claudePath', 'opencodePath', 'nodePath', 'npmPath'] as const).map(key => <label className="field" key={key}>{key === 'claudePath' ? 'Claude Code (claude.exe / claude)' : key === 'opencodePath' ? 'OpenCode (opencode.exe / opencode)' : key === 'nodePath' ? 'Node.js (node.exe / node)' : 'npm (npm.cmd / npm)'}<input value={tools[key]} onChange={e => setTools({...tools, [key]: e.target.value})} /></label>)}
         <label className="check"><input type="checkbox" checked={tools.transcribe} onChange={e => setTools({...tools, transcribe: e.target.checked})} />Transcrever falas com Whisper antes de cada pedido (GPU NVIDIA quando disponível)</label>
         <label className="check"><input type="checkbox" checked={tools.frames} onChange={e => setTools({...tools, frames: e.target.checked})} />Extrair frames dos vídeos com FFmpeg para a análise visual da IA</label>
         <p>Na primeira vez são baixados o Whisper e o modelo large-v3-turbo (~2,3 GB). "Salvar e verificar" já faz esse download.</p>
-        <p>Claude Code ausente ou sem login? Instale e execute <code>claude</code> uma vez para autenticar. Depois todas as sessões são controladas aqui.</p>
+        <p>Login ausente ou expirado? Use "Trocar IA" acima para entrar de novo. Depois todas as sessões são controladas aqui.</p>
         {checking && <pre className="log">{checking}</pre>}<div className="row"><Button variant="primary" disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setChecking(await api.check());})}>Salvar e verificar</Button>
           <Button disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setChecking('Configurações salvas.');})}>Salvar</Button></div>
       </section>
@@ -175,6 +184,9 @@ function App() {
         ? <Trimmer asset={asset} fps={p.brief.fps} busy={busy} onSave={async patch => save(patch)} onClose={() => setEditing(null)} />
         : <NoteEditor asset={asset} busy={busy} onSave={save} onClose={() => setEditing(null)} />;
     })()}
+    {/* First run (no provider chosen yet) or "Trocar IA" in Configurações: sign-in popup over the app. */}
+    {(!state.settings.engine || connecting) && <ConnectDialog api={api} act={act} settings={state.settings} busy={busy}
+      onClose={state.settings.engine ? () => setConnecting(false) : undefined} onDone={() => setConnecting(false)} />}
     {diagnostics && <Diagnostics state={state} api={api} act={act} busy={busy} error={error} onClose={() => setDiagnostics(false)} />}
     {modal && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="brief-title">
       <h2 id="brief-title">{modal === 'new' ? 'Novo projeto de vídeo' : 'Configurações do projeto'}</h2>

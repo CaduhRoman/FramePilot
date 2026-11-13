@@ -19,7 +19,7 @@ export function appStatus(state: State, {error, submitting, previewBuilding}: {e
   if (error) return {kind: 'error', tone: 'error', label: `Erro: ${errorSummary(error)}`, detail: error};
   if (task === 'Renderizando MP4') return {kind: 'render', tone: 'working', label: 'Renderizando…'};
   if (state.claudeBusy || submitting || (task && CLAUDE_TASKS.includes(task))) {
-    return {kind: 'claude', tone: 'working', label: 'Claude está editando…', detail: task && task !== 'Claude' ? task : undefined};
+    return {kind: 'claude', tone: 'working', label: `${state.settings.engine === 'opencode' ? 'OpenCode' : 'Claude'} está editando…`, detail: task && task !== 'Claude' ? task : undefined};
   }
   if (task && PREVIEW_TASKS.includes(task)) return {kind: 'preview', tone: 'working', label: 'Atualizando preview…', detail: task};
   if (task) return {kind: 'busy', tone: 'working', label: `${task}…`};
