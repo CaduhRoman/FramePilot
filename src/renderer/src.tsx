@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import type {API, Asset, Brief, ClaudeOptions, Settings, State} from '../shared/types';
 import {DEFAULT_SETTINGS} from '../shared/types';
 import {ConnectDialog} from './Connect';
+import {ApprovalDialog} from './Approval';
 import './style.css';
 import {Select} from './Select';
 import {AssetsPanel, NoteEditor} from './Assets';
@@ -200,6 +201,9 @@ function App() {
         <div className="row"><Button type="submit" variant="primary" disabled={busy}>{modal === 'new' ? 'Criar projeto' : 'Salvar alterações'}</Button><Button variant="ghost" onClick={() => setModal(null)}>Fechar</Button></div>
       </form>
     </section></div>}
+    {/* Agent permission requests stay on top of everything else. */}
+    {state.approvals[0] && <ApprovalDialog api={api} record={state.approvals[0]} queued={state.approvals.length}
+      agent={state.settings.engine === 'opencode' ? 'OpenCode' : 'Claude'} />}
   </div>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

@@ -43,6 +43,7 @@ const api: API = {
   ptyRestart: () => ipcRenderer.invoke('fp:ptyRestart'),
   commandOutput: id => ipcRenderer.invoke('fp:commandOutput', id),
   stopCommand: id => ipcRenderer.invoke('fp:stopCommand', id),
+  approveCommand: (id, allow) => ipcRenderer.invoke('fp:approveCommand', id, allow),
   clearCommands: () => ipcRenderer.invoke('fp:clearCommands'),
   onEvent: callback => {
     const listener = (_event: Electron.IpcRendererEvent, event: AppEvent) => callback(event);

@@ -43,18 +43,24 @@ const log = (text: string) => {
   if (logs.length > 300) logs.shift();
   emit({type: 'log', text: clean});
 };
-const state = (): State => ({project, root, previewUrl: remotion.url, claudeBusy: Boolean(claude.job) || task === 'Claude', task, settings, logs, lastRender, library, projects, commands: terminal.commands()});
+/** Agent commands waiting for the user's answer in the renderer's approval popup, oldest first. */
+const approvals = new Map<string, {record: CommandRecord; answer: (allow: boolean) => void}>();
+const state = (): State => ({project, root, previewUrl: remotion.url, claudeBusy: Boolean(claude.job) || task === 'Claude', task, settings, logs, lastRender, library, projects,
+  commands: terminal.commands(), approvals: [...approvals.values()].map(a => a.record)});
 const changed = () => emit({type: 'state', state: state()});
-// Agent commands that need approval wait here; the dialog is modal to the main window.
+// Agent commands that need approval wait here until the popup answers (or the work is stopped).
 async function approveCommand(record: CommandRecord) {
   if (!window || window.isDestroyed()) return false;
   if (window.isMinimized()) window.restore();
+  if (!window.isFocused()) window.flashFrame(true);
   window.focus();
-  const answer = await dialog.showMessageBox(window, {type: 'warning', buttons: ['Negar', 'Permitir uma vez'], defaultId: 0, cancelId: 0, noLink: true,
-    title: 'Confirmar comando', message: 'Claude quer executar um comando que precisa da sua confirmação.',
-    detail: `${record.command.slice(0, 2000)}\n\nPasta: ${record.cwd}\nMotivo: ${record.reasons.join('; ')}`});
-  return answer.response === 1;
+  return new Promise<boolean>(resolve => {
+    approvals.set(record.id, {record, answer: allow => {approvals.delete(record.id); resolve(allow); changed();}});
+    changed();
+  });
 }
+/** Stopping, switching projects or quitting denies whatever is still waiting. */
+const denyApprovals = () => {for (const {answer} of [...approvals.values()]) answer(false);};
 const terminal = new Terminal(processes, emit, () => changed(), approveCommand);
 const claude = new Claude(processes, emit, log, changed, () => terminal.bridge);
 const remotion = new Remotion(processes, log, changed);
@@ -84,6 +90,7 @@ function handle(name: string, action: (...args: any[]) => unknown) {
   });
 }
 async function activate(nextRoot: string, next: Project) {
+  denyApprovals();
   await remotion.stopStudio();
   project = next;
   root = nextRoot;
@@ -116,6 +123,7 @@ function registerIPC() {
     await remotion.preview(nextRoot, settings);
   }));
   handle('close', () => runTask('Fechando projeto', async () => {
+    denyApprovals();
     await remotion.stopStudio();
     await terminal.open(null);
     project = null;
@@ -250,6 +258,7 @@ function registerIPC() {
     await claude.send(root, project, text, settings);
   }));
   handle('stop', async () => {
+    denyApprovals();
     claude.job?.stop();
     remotion.operation?.stop();
     media?.stop();
@@ -298,6 +307,11 @@ function registerIPC() {
   handle('ptyWrite', (data: string) => {if (typeof data === 'string' && data.length <= 100_000) terminal.ptyWrite(data);});
   handle('ptyResize', (cols: number, rows: number) => {if (size(cols, 1000) && size(rows, 500)) terminal.ptyResize(cols, rows);});
   handle('ptyRestart', () => terminal.killPty());
+  // Answer from the approval popup. Allowed while other work runs: the agent is waiting on it.
+  handle('approveCommand', (id: string, allow: boolean) => {
+    if (typeof id !== 'string' || typeof allow !== 'boolean') throw new Error('Resposta inválida.');
+    approvals.get(id)?.answer(allow);
+  });
   handle('commandOutput', (id: string) => terminal.output(id));
   handle('stopCommand', async (id: string) => {await terminal.stop(id);});
   handle('clearCommands', () => terminal.clear());
@@ -423,7 +437,7 @@ app.whenReady().then(async () => {
     for (const key of ['transcribe', 'frames'] as const) if (typeof saved[key] === 'boolean') settings[key] = saved[key];
   } catch {}
   window = new BrowserWindow({width: 1440, height: 940, minWidth: 1000, minHeight: 700, title: 'FramePilot',
-    icon: path.join(__dirname, 'favicon.png'), backgroundColor: '#101114',
+    icon: path.join(__dirname, 'favicon.png'), backgroundColor: '#0a0a0a',
     webPreferences: {preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false}});
   window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
   window.webContents.on('will-navigate', event => event.preventDefault());
@@ -450,6 +464,7 @@ app.on('before-quit', event => {
   event.preventDefault();
   quitting = true;
   login.stop();
+  denyApprovals();
   void (async () => {await terminal.dispose(); await processes.stopAll(); await Promise.allSettled([...inFlight]); app.quit();})();
 });
 app.on('window-all-closed', () => app.quit());

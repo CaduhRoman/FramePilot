@@ -30,7 +30,7 @@ function LoginView({api, kind, onClose}: {api: API; kind: LoginKind; onClose: (c
   const [exit, setExit] = useState<number | null>(null);
   useEffect(() => {
     const term = new XTerm({fontSize: 12, fontFamily: 'Consolas, "Cascadia Mono", Menlo, monospace', cursorBlink: true, scrollback: 2000,
-      theme: {background: '#0b0c0f', foreground: '#e6e6e6'}});
+      theme: {background: '#0a0a0a', foreground: '#e6e6e6'}});
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current!);

@@ -12,7 +12,7 @@ function Shell({api}: {api: API}) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const term = new XTerm({fontSize: 13, fontFamily: 'Consolas, "Cascadia Mono", Menlo, monospace', cursorBlink: true, scrollback: 5000,
-      theme: {background: '#0b0c0f', foreground: '#e6e6e6'}});
+      theme: {background: '#0a0a0a', foreground: '#e6e6e6'}});
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current!);

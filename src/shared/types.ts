@@ -88,6 +88,8 @@ export interface State {
   library: string;
   projects: ProjectSummary[];
   commands: CommandRecord[];
+  /** Agent commands waiting for the user's answer, oldest first. */
+  approvals: CommandRecord[];
 }
 export type AppEvent = {type: 'state'; state: State} | {type: 'log'; text: string} | {type: 'delta'; text: string}
   | {type: 'pty'; data: string} | {type: 'login'; data: string} | {type: 'login-exit'; code: number} | {type: 'command-output'; id: string; stream: 'stdout' | 'stderr'; text: string};
@@ -138,6 +140,8 @@ export interface API {
   ptyRestart(): Promise<void>;
   commandOutput(id: string): Promise<CommandOutput>;
   stopCommand(id: string): Promise<void>;
+  /** Answers the approval popup for an agent command. */
+  approveCommand(id: string, allow: boolean): Promise<void>;
   clearCommands(): Promise<void>;
   onEvent(callback: (event: AppEvent) => void): () => void;
 }

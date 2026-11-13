@@ -1,6 +1,6 @@
 {
   "name": "framepilot",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local video editing harness for Claude Code and Remotion",
   "private": true,
   "main": "out/main/index.js",
