@@ -1,52 +1,123 @@
 # FramePilot
 
-MVP desktop local para edição de vídeo com **Electron + React + Claude Code CLI + Remotion**.
-Cortes, montagem, trilhas, legendas, títulos e motion são descritos pelo chat e implementados pelo Claude no código do vídeo.
+**Edite vídeos conversando com uma IA.** Você junta seus arquivos, descreve o vídeo que quer, e a IA faz os cortes, legendas, títulos, trilha e animações. Você assiste ao resultado na hora, pede ajustes e exporta em MP4.
 
-## Iniciar
+Tudo roda no seu computador: seus vídeos não são enviados para nenhum servidor do FramePilot.
 
-Requisitos: Node.js 22 LTS com npm; Claude Code instalado e autenticado. Execute `claude` uma vez para concluir o login, se ainda não fez isso.
+---
+
+## Instalar
+
+1. Baixe o instalador mais recente em **[Releases](https://github.com/CaduhRoman/FramePilot/releases/latest)** (`FramePilot-Setup-x.y.z.exe`).
+2. Execute o instalador.
+   > O Windows pode mostrar o aviso **"O Windows protegeu o computador"**. Clique em **Mais informações** e depois em **Executar assim mesmo**.
+3. Instale também o **[Node.js](https://nodejs.org)** (versão LTS), se ainda não tiver. O FramePilot usa o Node para montar e exportar seus vídeos.
+
+---
+
+## Conecte sua IA
+
+Na primeira vez que você abre o FramePilot, aparece uma janela para escolher quem vai editar seus vídeos.
+
+| Opção | Para quem |
+|---|---|
+| **Claude** | Quem assina o Claude Pro, Max ou Team. É a opção com melhor qualidade de edição. |
+| **ChatGPT** | Quem assina o ChatGPT Plus ou Pro (Codex). |
+| **GitHub Copilot** | Quem tem o Copilot Pro, Pro+ ou Business. |
+| **Outro provedor** | Gemini, OpenRouter, chave de API e outros. |
+| **Começar grátis** | Quem quer experimentar sem conta e sem cartão (modelo DeepSeek V4.1 Flash). |
+
+Ao escolher uma assinatura, o login abre no navegador, na página oficial do serviço. Você não precisa copiar nenhuma chave.
+
+O modo grátis tem limites de uso e funciona melhor em pedidos simples. Para edições mais elaboradas, uma assinatura dá resultados bem melhores.
+
+Você pode trocar de IA quando quiser em **Configurações → Trocar IA**.
+
+---
+
+## Criando seu primeiro vídeo
+
+### 1. Crie um projeto
+Clique em **Novo projeto** e preencha:
+- **Nome** do vídeo
+- **Briefing**: o que é o vídeo, para quem é, qual a mensagem
+- **Formato**: horizontal (YouTube), vertical (Reels/TikTok/Shorts) ou quadrado
+- **Duração**, **estilo visual** e observações
+
+O primeiro projeto demora alguns minutos para ficar pronto, porque o app baixa o que precisa da internet.
+
+### 2. Adicione seus arquivos
+Arraste para a janela ou clique em **Adicionar arquivos**. Você pode usar:
+- **Vídeo principal**: a gravação base do seu vídeo
+- **Outros vídeos**, **imagens**, **logos**, **áudios e músicas**, **fontes**
+- **Referências e documentos**: roteiros, exemplos de estilo, identidade visual
+
+Para cada arquivo, escreva rapidamente como ele deve ser usado ("logo no final", "música de fundo baixinha"…). Isso ajuda muito a IA.
+
+Nos vídeos, você pode **cortar trechos** antes de enviar: abra o vídeo e marque só as partes que interessam.
+
+### 3. Peça no chat
+Descreva o que você quer, como faria com um editor humano:
+
+> *"Corte as pausas, coloque legendas grandes e amarelas sincronizadas com a fala, e termine com o logo animado."*
+
+A IA assiste ao material, lê as falas transcritas e edita o vídeo. O preview atualiza sozinho.
+
+### 4. Ajuste e exporte
+Assista no preview, peça mudanças ("deixa a abertura mais rápida", "troca a cor da legenda") e, quando estiver bom, clique em **Renderizar MP4**.
+
+---
+
+## Dicas
+
+- **Seja específico.** "Legendas brancas com contorno, no terço inferior" funciona melhor que "coloca legenda".
+- **Marque arquivos importantes com a estrela.** Eles são reapresentados à IA sempre que uma nova conversa começa.
+- **Nova sessão** recomeça a conversa sem perder o que já foi editado. É útil quando a IA se perde ou o projeto mudou muito.
+- **Interromper** para a IA na hora. O que ela já tinha editado continua salvo.
+- **Permissões**: se a IA precisar executar algo sensível (apagar arquivos, mexer fora do projeto), o FramePilot pergunta antes. Na dúvida, clique em **Negar**.
+
+---
+
+## Transcrição e análise visual
+
+Antes de cada pedido, o FramePilot pode:
+- **Transcrever as falas** dos seus vídeos, para a IA sincronizar legendas e cortes com o que é dito
+- **Extrair quadros** dos vídeos, para a IA "ver" o conteúdo
+
+Na primeira vez, a transcrição baixa cerca de 2,3 GB. Em **Configurações → Salvar e verificar** você pode fazer esse download antes. As duas opções podem ser desligadas em Configurações.
+
+---
+
+## Onde ficam meus projetos?
+
+Na pasta **Vídeos → FramePilot** do seu computador. Cada projeto tem sua própria pasta, com seus arquivos originais e os vídeos exportados (em `renders`). Seus arquivos originais nunca são alterados: o app trabalha com cópias.
+
+---
+
+## Algo deu errado?
+
+- **A IA não responde ou dá erro de login:** vá em **Configurações → Trocar IA** e entre de novo.
+- **O preview não aparece:** clique em **Diagnóstico → Reiniciar preview**. Se não resolver, use **Instalar dependências**.
+- **Quer ver o que está acontecendo por trás:** o botão **Diagnóstico** mostra os registros, a sessão atual e um terminal.
+- **"A sessão não existe mais":** clique em **Nova sessão**. Isso acontece, por exemplo, ao abrir o projeto em outro computador.
+
+---
+
+## Bom saber
+
+- O FramePilot faz uma tarefa por vez: enquanto a IA edita ou o vídeo exporta, aguarde ou clique em **Interromper**.
+- Vídeos longos e arquivos pesados deixam a exportação mais demorada e usam mais memória.
+- O uso da IA conta no limite da sua própria assinatura (ou no limite do modo grátis).
+- Abra apenas projetos de fontes confiáveis: um projeto contém código que roda no seu computador para gerar o vídeo.
+
+<details>
+<summary>Para desenvolvedores</summary>
 
 ```sh
 npm install
-npm run dev
+npm run dev        # app em modo de desenvolvimento
+npm run dist       # gera o instalador
+npm run test:smoke # testes
 ```
 
-Build local: `npm run build` e `npm start`. Instalador para o sistema atual: `npm run dist` (sem assinatura de distribuição).
-
-1. Crie um projeto selecionando uma pasta vazia e preencha o briefing.
-2. O app instala o Remotion e inicia seu Studio. Internet é necessária para baixar dependências e, no primeiro render, o navegador de renderização.
-3. Adicione vídeos, imagens, logos, áudio, fontes e documentos; informe como devem ser usados.
-4. Envie o primeiro pedido no chat. Claude edita `remotion/src`; o Studio recarrega as mudanças.
-5. Faça novos pedidos e clique em **Renderizar MP4** para exportar a composição `Main` em H.264.
-
-**Configurações → Ferramentas locais** permite verificar/configurar caminhos de Claude, Node e npm. No Windows, prefira o Claude nativo (`claude.exe`); a instalação do Claude também pode exigir Git for Windows. Não use caminhos/CLI de WSL dentro do app Windows.
-
-A seção **Criação** reúne projeto, assets, preview e chat. **Configurações** reúne as ferramentas locais. O header usa uma cápsula translúcida com transições suaves; alternar seções preserva o preview e o chat. A navegação funciona por teclado e respeita a preferência do sistema por movimento reduzido.
-
-## Persistência e contexto
-
-Cada pasta contém `project.json`, `CONTEXT.md`, `assets/`, `references/`, `remotion/` e `renders/`.
-Assets de mídia são copiados para `remotion/public/assets/`, sem modificar os originais importados.
-O contexto completo é enviado no primeiro pedido de uma sessão. Alterações de configuração e novos assets relevantes geram apenas deltas no pedido seguinte. A opção de relevância serve para arquivar um material sem anunciá-lo na conversa atual.
-
-O app usa `claude -p --output-format stream-json` e `--resume <session-id>`: **a conversa persiste, o processo é iniciado a cada pedido**. O ID e o chat ficam no projeto; o transcript oficial continua na pasta de dados do Claude. Reabrir o projeto na mesma máquina retoma a sessão. Se o transcript foi removido ou o projeto mudou de máquina, use **Nova sessão**. Interromper mantém edições já realizadas.
-
-## Limites do MVP
-
-- Sem timeline visual própria, transcrição automática, geração de mídia ou garantia de qualidade editorial. A edição depende dos pedidos, assets e capacidades do Claude/Remotion.
-- Claude recebe ferramentas de leitura/edição, sem Bash. O app instala dependências e renderiza. Se Claude alterar `package.json`, clique em **Instalar dependências**.
-- Uma operação por vez; render em H.264, composição `Main`, concorrência 1 para reduzir memória. Projetos longos e mídia pesada exigem mais RAM/tempo.
-- Autenticação inicial do Claude é externa; não requer terminal para os pedidos posteriores. Consumo segue a conta/configuração local do Claude.
-- Abra apenas projetos confiáveis: o preview executa código React e instalar dependências executa scripts npm.
-- UI do harness isolada do Studio: sem Node no renderer; IPC restrito ao frame principal.
-
-Verificações rápidas: `npm run build` e `npm run test:smoke`. O teste do transporte usa um CLI simulado e não consome Claude.
-
-Validação desta implementação: TypeScript/build do app, testes de persistência/contexto/transporte e TypeScript/bundle do template Remotion passaram. O Studio não pôde iniciar neste ambiente de nuvem (`os.networkInterfaces` bloqueado); preview/hot reload, exportação MP4 e o Claude autenticado ainda precisam de validação no desktop.
-
-## Skills do Claude
-
-`.claude/skills/video-craft/SKILL.md` orienta o uso de `craft.md`, que contém as sete regras editoriais. `CLAUDE.md` instrui a leitura em todo pedido de vídeo. O CLI tem a ferramenta Skill habilitada e recebe um lembrete curto a cada pedido, sem repetir o briefing.
-
-O app inclui as skills no build e copia arquivos ausentes ao criar/abrir projetos e antes de chamar o Claude, inclusive em sessões existentes. Arquivos personalizados não são sobrescritos. Para adicionar skills ao app, crie `.claude/skills/<nome>/SKILL.md` e reconstrua; para um vídeo específico, adicione a skill na pasta desse projeto.
+</details>
