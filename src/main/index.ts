@@ -8,7 +8,7 @@ import type {AgentEngine, AppEvent, AssetKind, AssetPatch, Brief, ClaudeOptions,
 import type {BrandDetail, BrandInput, BrandPatch} from '../shared/types';
 import {DEFAULT_SETTINGS, EFFORTS} from '../shared/types';
 import {createProject, importAsset, listProjects, mainContext, moveProject, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, refreshBrand, removeAsset, updateAsset, validateBrief, writeSettings, queueAsset, essentialAsset} from './project';
-import {applyBrandKeys, brandCandidates, createBrand, KEY as BRAND_KEY, kitDir, listBrands, projectKit, putBrandAsset, removeBrandAsset, snapshotBrand, syncProjectBrand, updateBrand} from './brand';
+import {applyBrandKeys, brandCandidates, createBrand, KEY as BRAND_KEY, kitDir, listBrands, projectKit, putBrandAsset, removeBrandAsset, SNAPSHOT_DIR, snapshotBrand, syncProjectBrand, updateBrand} from './brand';
 import {ffmpegDir, prepareMaterial, probe} from './media';
 import {Processes, claudeExecutable, opencodeExecutable} from './processes';
 import {LoginShell, opencodeModels, providerStatus, registerElevenlabsForClaude} from './providers';
@@ -271,7 +271,7 @@ function registerIPC() {
       detail: `O projeto está congelado na versão ${project.brand.lock.version} da marca (snapshot do export). Atualizar faz o vídeo voltar a usar os assets e tokens atuais, o que pode mudar o resultado de um vídeo já entregue.`});
     if (answer.response !== 1) return;
     project.brand = {id: project.brand.id, ...(project.brand.overrides ? {overrides: project.brand.overrides} : {})};
-    await fs.rm(path.join(root, '.brand-snapshot'), {recursive: true, force: true});
+    await fs.rm(path.join(root, SNAPSHOT_DIR), {recursive: true, force: true});
     await refreshBrand(root, project);
     project.changes.push({id: randomUUID(), relevant: true,
       text: 'O projeto voltou a acompanhar a marca ao vivo (snapshot descartado). Os assets e tokens podem ter mudado desde o último export.'});
@@ -305,9 +305,9 @@ function registerIPC() {
     await importFiles(kind, note, selected.filePaths);
   }));
   // Picking and importing are split so the UI can ask for the type and usage after choosing files.
+  // Escolher arquivos não exige projeto aberto: a tela de nova marca também escolhe a logo por aqui.
   handle('pickFiles', async () => {
-    current();
-    const selected = await dialog.showOpenDialog(window, {title: 'Adicionar arquivos ao projeto', properties: ['openFile', 'multiSelections']});
+    const selected = await dialog.showOpenDialog(window, {title: 'Escolher arquivos', properties: ['openFile', 'multiSelections']});
     return selected.canceled ? [] : selected.filePaths;
   });
   handle('importFiles', (kind: AssetKind, note: string, sources: string[]) => runTask('Importando assets', async () => {

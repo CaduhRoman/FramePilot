@@ -312,3 +312,21 @@ test('marca ilegível não impede abrir o projeto', async () => {
     assert.equal(await projectKit(root, project), null);
   } finally {await fs.rm(base, {recursive: true, force: true});}
 });
+
+test('snapshot apagado à mão cai para a marca ao vivo em vez de deixar o projeto sem kit', async () => {
+  const {base, library: lib} = await library();
+  try {
+    await createBrand(lib, {name: 'JA'});
+    const logo = path.join(base, 'logo.svg');
+    await fs.writeFile(logo, SVG);
+    await putBrandAsset(lib, 'ja', 'logo', 'Logo', logo);
+    const root = await projectFolder(lib, 'Reels JA', 'ja');
+    const project = await createProject(root, brief, 'ja');
+    await snapshotBrand(root, project);
+    await fs.rm(path.join(root, '.brand-snapshot'), {recursive: true, force: true});
+    const kit = await syncProjectBrand(root, project);
+    assert.ok(kit, 'o projeto continua com um kit utilizável');
+    assert.equal((await readGenerated(root)).locked, false, 'sem snapshot, o projeto não finge estar congelado');
+    assert.match(await fs.readFile(path.join(root, 'remotion/public/brand/assets/logo.svg'), 'utf8'), /^<svg/);
+  } finally {await fs.rm(base, {recursive: true, force: true});}
+});

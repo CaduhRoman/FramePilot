@@ -390,13 +390,16 @@ export async function syncProjectBrand(root: string, project: Project): Promise<
     return null;
   }
   // Travado: a origem é o snapshot gravado no export, para que o re-render reproduza o vídeo antigo.
-  const origin = project.brand!.lock ? path.join(root, SNAPSHOT_DIR) : live;
+  // Se o snapshot tiver sido apagado à mão, cai para a marca ao vivo em vez de deixar o projeto sem kit.
+  const snapshot = project.brand!.lock ? path.join(root, SNAPSHOT_DIR) : null;
+  const origin = snapshot && await fs.access(path.join(snapshot, 'brand.json')).then(() => true, () => false) ? snapshot : live;
+  const lock = origin === snapshot ? project.brand!.lock : undefined;
   const raw = await fs.readFile(path.join(origin, 'brand.json'), 'utf8');
   const kit = resolveKit(validateKit(JSON.parse(raw), project.brand!.id), project.brand!.overrides);
   await mirror(origin, publicDir);
   await mirror(path.join(origin, 'components'), components);
   await fs.mkdir(src, {recursive: true});
-  await fs.writeFile(path.join(src, 'brand-kit.json'), JSON.stringify(publicKit(kit, project.brand!.lock), null, 2));
+  await fs.writeFile(path.join(src, 'brand-kit.json'), JSON.stringify(publicKit(kit, lock), null, 2));
   await fs.writeFile(path.join(src, 'brand.tsx'), BRAND_MODULE);
   return kit;
 }
