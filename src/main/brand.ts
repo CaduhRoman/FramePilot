@@ -294,7 +294,7 @@ import kit from './brand-kit.json';
 type Assets = typeof kit.assets;
 export type BrandAssetKey = keyof Assets;
 /** Aceita 'brand:logo' e 'logo'. */
-export type BrandAssetRef = BrandAssetKey | \\\`brand:\\\${string}\\\` | string;
+export type BrandAssetRef = BrandAssetKey | \`brand:\${string}\` | string;
 
 const assets: Record<string, {file: string; label: string; kind: string}> = kit.assets;
 
@@ -304,7 +304,7 @@ export function resolveAsset(reference: BrandAssetRef): string {
   const asset = assets[key];
   if (!asset) {
     throw new Error(
-      \\\`Asset de marca desconhecido: "\\\${reference}". Chaves disponíveis: \\\${Object.keys(assets).map(k => 'brand:' + k).join(', ') || '(nenhuma)'}.\\\`
+      \`Asset de marca desconhecido: "\${reference}". Chaves disponíveis: \${Object.keys(assets).map(k => 'brand:' + k).join(', ') || '(nenhuma)'}.\`
     );
   }
   return staticFile(asset.file);
@@ -324,8 +324,8 @@ function loadFonts() {
   fontsStarted = true;
   for (const [role, font] of Object.entries(kit.fonts as Record<string, {family: string; weight?: string; file?: string}>)) {
     if (!font.file) continue;
-    const handle = delayRender(\\\`Carregando fonte da marca (\\\${role}): \\\${font.family}\\\`);
-    const face = new FontFace(font.family, \\\`url(\\\${staticFile(font.file)})\\\`, {weight: font.weight ?? 'normal'});
+    const handle = delayRender(\`Carregando fonte da marca (\${role}): \${font.family}\`);
+    const face = new FontFace(font.family, \`url(\${staticFile(font.file)})\`, {weight: font.weight ?? 'normal'});
     face.load().then(
       loaded => {document.fonts.add(loaded); continueRender(handle);},
       () => continueRender(handle)
