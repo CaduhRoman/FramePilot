@@ -1,6 +1,6 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import type {API, Asset, Brief, ClaudeOptions, Settings, State} from '../shared/types';
+import type {API, Asset, Brief, ClaudeOptions, ProjectSummary, Settings, State} from '../shared/types';
 import {DEFAULT_SETTINGS} from '../shared/types';
 import {ConnectDialog} from './Connect';
 import {ApprovalDialog} from './Approval';
@@ -13,6 +13,7 @@ import {ChatPanel} from './Chat';
 import {Diagnostics} from './Diagnostics';
 import {appStatus} from './status';
 import {Button, Icon as UIIcon, StatusBadge} from './ui';
+import {BrandBar, BrandKeysDialog, BrandLibrary, BrandPage, MoveProjectDialog, NewBrandDialog, NewProjectDialog} from './Brand';
 const appLogo = new URL('../../favicon.png', import.meta.url).href;
 declare global {interface Window {framepilot: API}}
 const api = window.framepilot;
@@ -59,6 +60,12 @@ function App() {
   const [previewBuilding, setPreviewBuilding] = useState(false);
   const [importFiles, setImportFiles] = useState<string[] | null>(null);
   const [skipOnboarding, setSkipOnboarding] = useState<string | null>(null);
+  // Marcas: página aberta, diálogos de criação/movimentação e a oferta de trocar caminhos por brand:*.
+  const [brandPage, setBrandPage] = useState<string | null>(null);
+  const [newBrand, setNewBrand] = useState(false);
+  const [newProject, setNewProject] = useState<{brandId?: string} | null>(null);
+  const [moving, setMoving] = useState<ProjectSummary | null>(null);
+  const [offerKeys, setOfferKeys] = useState<string | null>(null);
   const retry = useRef<(() => Promise<unknown>) | null>(null);
   const prompt = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -102,7 +109,8 @@ function App() {
   const p = state.project;
   const busy = Boolean(state.task) || state.claudeBusy || submitting;
   const status = appStatus(state, {error, submitting, previewBuilding});
-  const openBrief = (create: boolean) => {setBrief(create ? {...defaults} : {...p!.brief}); setModal(create ? 'new' : 'brief');};
+  // Criar projeto passa pelo NewProjectDialog (marca → template); este modal só edita o projeto aberto.
+  const openBrief = () => {setBrief({...p!.brief}); setModal('brief');};
   const pick = () => void act(async () => {const paths = await api.pickFiles(); if (paths.length) setImportFiles(paths);});
   const send = (text: string) => {setStream(''); setSubmitting(true); void act(() => api.send(text)).finally(() => setSubmitting(false));};
   const onboarding = p && p.messages.length === 0 && !submitting && !state.claudeBusy && skipOnboarding !== state.root;
@@ -131,19 +139,29 @@ function App() {
       {retry.current && <Button onClick={() => void act(retry.current!)}>Tentar novamente</Button>}<Button variant="ghost" onClick={() => setError('')}>Fechar</Button></div>}
     <div className="page-stack">
     <section id="panel-create" role="tabpanel" aria-labelledby="tab-create" className={`page creation-page ${section === 'create' ? 'is-active' : ''}`} inert={section !== 'create'}>
-      <div className="section-heading"><h1>Criação</h1><div className="row">{p && <Button icon="back" disabled={busy} onClick={() => void act(api.close)}>Projetos</Button>}<Button variant="ghost" disabled={busy} onClick={() => void act(() => api.open())}>Abrir outra pasta</Button><Button icon="plus" disabled={busy} onClick={() => openBrief(true)}>Novo projeto</Button></div></div>
-    {!p ? state.projects.length ? <main className="library">
+      <div className="section-heading"><h1>Criação</h1>
+        {p?.brand && state.brands.some(b => b.kit.id === p.brand!.id) &&
+          <BrandBar brand={state.brands.find(b => b.kit.id === p.brand!.id)!} locked={p.brand.lock} api={api} act={act} busy={busy} />}
+        <div className="row">
+        {p && <Button icon="back" disabled={busy} onClick={() => void act(api.close)}>Projetos</Button>}
+        {!p && brandPage && <Button icon="back" disabled={busy} onClick={() => setBrandPage(null)}>Projetos</Button>}
+        <Button variant="ghost" disabled={busy} onClick={() => void act(() => api.open())}>Abrir outra pasta</Button>
+        {!p && !brandPage && <Button variant="ghost" icon="plus" disabled={busy} onClick={() => setNewBrand(true)}>Nova marca</Button>}
+        <Button icon="plus" disabled={busy} onClick={() => setNewProject({brandId: brandPage ?? undefined})}>Novo projeto</Button>
+      </div></div>
+    {!p ? brandPage && state.brands.some(b => b.kit.id === brandPage)
+      ? <BrandPage brand={state.brands.find(b => b.kit.id === brandPage)!} projects={state.projects.filter(s => s.brandId === brandPage)}
+        api={api} act={act} busy={busy} onBack={() => setBrandPage(null)} onOpenProject={root => void act(() => api.open(root))}
+        onNewProject={() => setNewProject({brandId: brandPage})} />
+      : state.projects.length || state.brands.length ? <main className="library">
       <div className="library-head"><div><h2>Seus projetos</h2><small className="path">{state.library}</small></div><Button variant="ghost" icon="folder" disabled={busy} onClick={() => void act(api.showLibrary)}>Abrir pasta</Button></div>
-      <ul className="project-grid">{state.projects.map(s => <li key={s.root}><button className="project-card" disabled={busy} title={s.root} onClick={() => void act(() => api.open(s.root))}>
-        <strong>{s.name}</strong>
-        <small>{s.width} × {s.height} · {s.duration}s</small>
-        <small>{s.messages ? `${s.messages} mensagem(ns)${s.hasSession ? ' · conversa ativa' : ''}` : 'Sem pedidos ainda'}</small>
-        <small>Editado {new Date(s.updatedAt).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'})}</small>
-      </button></li>)}</ul>
+      <BrandLibrary state={state} busy={busy} onOpen={root => void act(() => api.open(root))} onMove={setMoving}
+        onBrand={setBrandPage} onNewBrand={() => setNewBrand(true)} />
     </main> : <main className="welcome"><span className="welcome-symbol"><Icon name="create" /></span><h2>Do material bruto ao vídeo final.</h2><p>Crie um projeto, adicione seus arquivos e descreva a edição no chat.</p>
       <p>É preciso ter Node.js instalado. Os projetos ficam em {state.library}.</p>
-      <Button variant="primary" disabled={busy} onClick={() => openBrief(true)}>Criar projeto de vídeo</Button></main> : <main className="workspace">
-      <AssetsPanel project={p} root={state.root!} busy={busy} api={api} act={act} onEdit={setEditing} onSettings={() => openBrief(false)}
+      <div className="row"><Button variant="primary" disabled={busy} onClick={() => setNewProject({})}>Criar projeto de vídeo</Button>
+        <Button variant="ghost" disabled={busy} onClick={() => setNewBrand(true)}>Criar uma marca</Button></div></main> : <main className="workspace">
+      <AssetsPanel project={p} root={state.root!} busy={busy} api={api} act={act} onEdit={setEditing} onSettings={openBrief}
         importFiles={importFiles} setImportFiles={setImportFiles} onPick={pick} />
       <PreviewPanel state={state} api={api} act={act} busy={busy} status={status} fallbackFps={p.brief.fps} fallbackDuration={p.brief.duration} onBuilding={onBuilding}
         overlay={onboarding ? <Onboarding hasAssets={p.assets.length > 0} onAdd={pick} onDescribe={() => prompt.current?.focus()} onSkip={() => setSkipOnboarding(state.root)} /> : undefined} />
@@ -202,17 +220,30 @@ function App() {
       onClose={state.settings.engine ? () => setConnecting(false) : undefined} onDone={() => setConnecting(false)} />}
     {diagnostics && <Diagnostics state={state} api={api} act={act} busy={busy} error={error} onClose={() => setDiagnostics(false)} />}
     {modal && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="brief-title">
-      <h2 id="brief-title">{modal === 'new' ? 'Novo projeto de vídeo' : 'Configurações do projeto'}</h2>
-      <form onSubmit={e => {e.preventDefault(); const create = modal === 'new'; void act(async () => {await (create ? api.create(brief) : api.save(brief)); setModal(null);}); setModal(null);}}>
+      <h2 id="brief-title">Configurações do projeto</h2>
+      <form onSubmit={e => {e.preventDefault(); void act(async () => {await api.save(brief); setModal(null);}); setModal(null);}}>
         <label className="field">Nome<input required maxLength={200} value={brief.name} onChange={e => setBrief({...brief, name: e.target.value})} autoFocus /></label>
         <label className="field">Briefing / objetivo<textarea rows={3} value={brief.briefing} onChange={e => setBrief({...brief, briefing: e.target.value})} placeholder="Tipo de vídeo, público, mensagem, estrutura e resultado esperado" /></label>
         <label className="field">Formato<Select label="Formato do vídeo" value={["1920x1080", "1080x1920", "1080x1080"].includes(`${brief.width}x${brief.height}`) ? `${brief.width}x${brief.height}` : ""} placeholder="Escolher proporção (ou editar abaixo)" onChange={value => {const [width, height] = value.split("x").map(Number); setBrief({...brief, width, height});}} options={[{value: "1920x1080", label: "Horizontal 16:9"}, {value: "1080x1920", label: "Vertical 9:16"}, {value: "1080x1080", label: "Quadrado 1:1"}]} /></label>
         <div className="numbers">{(['width', 'height', 'fps', 'duration'] as const).map((key, i) => <label className="field" key={key}>{['Largura', 'Altura', 'FPS', 'Duração (s)'][i]}<input type="number" required min={key === 'duration' ? 0.1 : key === 'fps' ? 1 : 2} step={key === 'duration' || key === 'fps' ? 'any' : 2} value={brief[key]} onChange={e => setBrief({...brief, [key]: Number(e.target.value)})} /></label>)}</div>
         <label className="field">Estilo / direção visual<textarea rows={3} value={brief.style} onChange={e => setBrief({...brief, style: e.target.value})} /></label>
         <label className="field">Observações<textarea rows={3} value={brief.notes} onChange={e => setBrief({...brief, notes: e.target.value})} /></label>
-        <div className="row"><Button type="submit" variant="primary" disabled={busy}>{modal === 'new' ? 'Criar projeto' : 'Salvar alterações'}</Button><Button variant="ghost" onClick={() => setModal(null)}>Fechar</Button></div>
+        <div className="row"><Button type="submit" variant="primary" disabled={busy}>Salvar alterações</Button><Button variant="ghost" onClick={() => setModal(null)}>Fechar</Button></div>
       </form>
     </section></div>}
+    {/* Marcas: criação, novo projeto em dois passos, mover e a oferta de trocar caminhos por brand:*. */}
+    {newBrand && <NewBrandDialog api={api} act={act} busy={busy} onClose={() => setNewBrand(false)} />}
+    {newProject && <NewProjectDialog brands={state.brands} initialBrand={newProject.brandId} defaults={defaults}
+      api={api} act={act} busy={busy} onClose={() => setNewProject(null)} />}
+    {moving && <MoveProjectDialog summary={moving} brands={state.brands} api={api} act={act} busy={busy}
+      onClose={movedTo => {
+        // A sugestão de trocar caminhos por brand:* só faz sentido no projeto aberto, já no caminho novo.
+        const wasOpen = state.root !== null && state.root === moving.root;
+        setMoving(null);
+        if (movedTo && wasOpen) setOfferKeys(movedTo);
+      }} />}
+    {offerKeys && state.root && p?.brand?.id === offerKeys &&
+      <BrandKeysDialog root={state.root} api={api} act={act} busy={busy} onClose={() => setOfferKeys(null)} />}
     {/* Agent permission requests stay on top of everything else. */}
     {state.approvals[0] && <ApprovalDialog api={api} record={state.approvals[0]} queued={state.approvals.length}
       agent={state.settings.engine === 'opencode' ? 'OpenCode' : 'Claude'} />}

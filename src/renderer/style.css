@@ -216,6 +216,69 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .project-grid { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s3); }
 .project-card { width: 100%; height: 100%; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--s1); padding: var(--s4); border-radius: var(--r-lg); border-color: var(--border); background: var(--surface); text-align: left; white-space: normal; }
 .project-card strong { font-weight: var(--w-bold); overflow-wrap: anywhere; margin-bottom: var(--s1); }
+
+/* ---------- Marcas (Brand) ---------- */
+/* Projetos agrupados por marca: a cor da marca aparece só na borda e nos chips, para o tema escuro seguir mandando. */
+.kit-group { margin-bottom: var(--s5); }
+.kit-group-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s2) var(--s3) var(--s2) var(--s2);
+  margin-bottom: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.kit-group-toggle { flex: 1; justify-content: flex-start; gap: var(--s3); min-height: 44px; padding: var(--s1) var(--s2); border: 0; background: none; text-align: left; }
+.kit-group-toggle:hover:enabled { background: var(--surface-2); border-radius: var(--r-sm); }
+.kit-group-name { display: flex; flex-direction: column; gap: 2px; }
+.kit-group-name strong { font-weight: var(--w-bold); }
+.kit-group-empty { color: var(--text-2); font-size: var(--fs-sm); line-height: var(--lh-sm); margin: 0 0 var(--s2) var(--s2); }
+.kit-group-cta { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); padding: var(--s4);
+  border: 1px dashed var(--border-strong); border-radius: var(--r-lg); background: var(--surface); }
+.kit-group-cta div { display: flex; flex-direction: column; gap: var(--s1); }
+.kit-tile { display: inline-grid; place-items: center; flex: none; border: 1px solid var(--border-strong); border-radius: var(--r-sm); overflow: hidden; }
+.kit-tile img { width: 100%; height: 100%; object-fit: contain; padding: 2px; box-sizing: border-box; }
+.kit-tile-loose { background: var(--surface-2); color: var(--text-2); width: 32px; height: 32px; }
+
+.project-item { position: relative; display: flex; }
+.project-menu { position: absolute; top: var(--s2); right: var(--s2); opacity: 0; }
+.project-item:hover .project-menu, .project-menu:focus-visible, .project-menu[aria-expanded="true"] { opacity: 1; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--s1); margin: var(--s1) 0; }
+.chip { padding: 1px var(--s2); border: 1px solid var(--border); border-radius: var(--r-full); color: var(--text-2);
+  font-size: var(--fs-sm); line-height: var(--lh-sm); white-space: nowrap; }
+/* Metadados de conversa ficam em segundo plano, como pedido. */
+.project-meta { color: var(--text-disabled); }
+
+.brand-bar { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); border: 1px solid var(--border); border-radius: var(--r-full); background: var(--surface); }
+.brand-bar-text { display: flex; flex-direction: column; gap: 0; }
+.brand-bar-text strong { font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: var(--w-bold); }
+
+.brand-page .settings-card { margin-bottom: var(--s4); }
+.kit-assets { list-style: none; padding: 0; margin: 0 0 var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.kit-assets li { display: flex; align-items: center; gap: var(--s3); padding: var(--s2); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.kit-preview { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; color: var(--text-2); }
+.kit-preview img { width: 100%; height: 100%; object-fit: contain; padding: var(--s1); box-sizing: border-box; }
+.kit-asset-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kit-key { color: var(--text); font-weight: var(--w-medium); }
+.kit-asset-info small { overflow-wrap: anywhere; }
+.kit-add { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: var(--s3); align-items: end; }
+.kit-add .field { margin: 0; }
+.color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--s3); }
+.color-input { display: flex; gap: var(--s2); align-items: center; }
+.color-input input[type="color"] { width: 36px; height: var(--control); padding: 2px; flex: none; }
+.color-hex { font-family: var(--mono); font-size: var(--fs-sm); min-width: 0; }
+.font-row { display: grid; grid-template-columns: 1.4fr .6fr 1fr; gap: var(--s3); align-items: end; }
+.font-row .field { margin: 0; }
+
+.brand-picker, .template-picker, .candidate-list { list-style: none; padding: 0; margin: 0 0 var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.template-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 0; }
+.brand-option, .template-option { width: 100%; justify-content: flex-start; gap: var(--s3); padding: var(--s3); border-radius: var(--r-md);
+  border-color: var(--border); background: var(--surface); text-align: left; white-space: normal; min-height: 56px; }
+.template-option { flex-direction: column; align-items: flex-start; gap: 2px; }
+.template-option.selected { border-color: var(--accent-border); background: var(--accent-bg); }
+.brand-option span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.candidate-list li { padding: var(--s2) var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.candidate-list small { display: block; margin-top: var(--s1); }
+.candidate-code { color: var(--text-2); overflow-wrap: anywhere; }
+.modal-note { color: var(--text-2); font-size: var(--fs-sm); line-height: var(--lh-sm); margin: calc(var(--s3) * -1) 0 var(--s4); }
+
+@media (max-width: 860px) {
+  .kit-add, .font-row { grid-template-columns: 1fr; }
+}
 .welcome { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--s3); max-width: 560px; padding: var(--s6); text-align: center; }
 .welcome p { color: var(--text-2); }
 .welcome .btn-primary { margin-top: var(--s3); }
