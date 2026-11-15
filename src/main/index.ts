@@ -5,11 +5,13 @@ import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {AgentEngine, AppEvent, AssetKind, AssetPatch, Brief, ClaudeOptions, CommandRecord, LoginKind, Project, ProjectSummary, Settings, State} from '../shared/types';
+import type {BrandDetail, BrandInput, BrandPatch} from '../shared/types';
 import {DEFAULT_SETTINGS, EFFORTS} from '../shared/types';
-import {createProject, importAsset, listProjects, mainContext, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, removeAsset, updateAsset, validateBrief, writeSettings, queueAsset, essentialAsset} from './project';
+import {createProject, importAsset, listProjects, mainContext, moveProject, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, refreshBrand, removeAsset, updateAsset, validateBrief, writeSettings, queueAsset, essentialAsset} from './project';
+import {applyBrandKeys, brandCandidates, createBrand, KEY as BRAND_KEY, kitDir, listBrands, projectKit, putBrandAsset, removeBrandAsset, snapshotBrand, syncProjectBrand, updateBrand} from './brand';
 import {ffmpegDir, prepareMaterial, probe} from './media';
 import {Processes, claudeExecutable, opencodeExecutable} from './processes';
-import {LoginShell, opencodeModels, providerStatus} from './providers';
+import {LoginShell, opencodeModels, providerStatus, registerElevenlabsForClaude} from './providers';
 import {extractFrames} from './frames';
 import {ensureWhisper, transcribeMissing, writeAlignedTranscripts, type Stoppable} from './transcribe';
 import {Claude} from './claude';
@@ -25,6 +27,7 @@ let task: string | null = null;
 let lastRender: string | null = null;
 let library = '';
 let projects: ProjectSummary[] = [];
+let brands: BrandDetail[] = [];
 let media: Stoppable | undefined;
 let settings: Settings = {...DEFAULT_SETTINGS};
 const saveSettings = () => fs.writeFile(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings));
@@ -45,11 +48,12 @@ const log = (text: string) => {
 };
 /** Agent commands waiting for the user's answer in the renderer's approval popup, oldest first. */
 const approvals = new Map<string, {record: CommandRecord; answer: (allow: boolean) => void}>();
-const state = (): State => ({project, root, previewUrl: remotion.url, claudeBusy: Boolean(claude.job) || task === 'Claude', task, settings, logs, lastRender, library, projects,
+const state = (): State => ({project, root, previewUrl: remotion.url, claudeBusy: Boolean(claude.job) || task === 'Claude', task, settings, logs, lastRender, library, projects, brands,
   commands: terminal.commands(), approvals: [...approvals.values()].map(a => a.record)});
 const changed = () => emit({type: 'state', state: state()});
 // Agent commands that need approval wait here until the popup answers (or the work is stopped).
 async function approveCommand(record: CommandRecord) {
+  if (settings.autoMode) {log(`Modo Auto: comando permitido sem confirmação (${record.reasons.join('; ')}): ${record.command.slice(0, 300)}`); return true;}
   if (!window || window.isDestroyed()) return false;
   if (window.isMinimized()) window.restore();
   if (!window.isFocused()) window.flashFrame(true);
@@ -66,7 +70,36 @@ const claude = new Claude(processes, emit, log, changed, () => terminal.bridge);
 const remotion = new Remotion(processes, log, changed);
 async function refreshProjects() {
   projects = await listProjects(library);
+  const found = await listBrands(library);
+  brands = found.map(b => ({...b, projects: projects.filter(p => p.brandId === b.kit.id).length}));
   changed();
+}
+/**
+ * Depois de qualquer alteração no kit, reespelha a marca em todos os seus projetos em edição,
+ * para que a logo nova apareça no preview sem abrir projeto por projeto. Projetos travados
+ * num snapshot (já exportados) ficam de fora de propósito.
+ */
+async function pushBrand(id: string) {
+  for (const summary of projects.filter(p => p.brandId === id)) {
+    if (root && path.resolve(summary.root) === path.resolve(root) && project) continue;
+    try {
+      const p: Project = JSON.parse(await fs.readFile(path.join(summary.root, 'project.json'), 'utf8'));
+      if (!p.brand || p.brand.lock) continue;
+      await syncProjectBrand(summary.root, p);
+    } catch (error) {log(`Marca não aplicada em ${summary.name}: ${(error as Error).message}`);}
+  }
+  // O projeto aberto também recebe o kit novo e um CONTEXT.md atualizado.
+  if (root && project?.brand?.id === id && !project.brand.lock) {
+    await refreshBrand(root, project);
+    await persist(root, project);
+  }
+  await refreshProjects();
+}
+function brandOf(id: unknown): BrandDetail {
+  if (typeof id !== 'string' || !BRAND_KEY.test(id)) throw new Error('Marca inválida.');
+  const brand = brands.find(b => b.kit.id === id);
+  if (!brand) throw new Error('Marca não encontrada na biblioteca.');
+  return brand;
 }
 function current() {
   if (!project || !root) throw new Error('Crie ou abra um projeto primeiro.');
@@ -101,9 +134,10 @@ async function activate(nextRoot: string, next: Project) {
 }
 function registerIPC() {
   handle('state', async () => {await refreshProjects(); return state();});
-  handle('create', (brief: Brief) => runTask('Criando projeto', async () => {
-    const nextRoot = await projectFolder(library, validateBrief(brief).name);
-    await activate(nextRoot, await createProject(nextRoot, brief));
+  handle('create', (brief: Brief, brandId?: string) => runTask('Criando projeto', async () => {
+    const id = brandId ? brandOf(brandId).kit.id : undefined;
+    const nextRoot = await projectFolder(library, validateBrief(brief).name, id);
+    await activate(nextRoot, await createProject(nextRoot, brief, id));
     await remotion.install(nextRoot, settings);
     await remotion.preview(nextRoot, settings);
   }));
@@ -144,6 +178,105 @@ function registerIPC() {
     project.brief = next;
     await persist(root, project);
     await writeSettings(root, next);
+  }));
+  // --- Marcas -------------------------------------------------------------
+  handle('createBrand', (input: BrandInput) => runTask('Criando marca', async () => {
+    if (!input || typeof input !== 'object' || typeof input.name !== 'string') throw new Error('Marca inválida.');
+    if (typeof input.guide === 'string' && input.guide.length > 200_000) throw new Error('Guia da marca muito longo.');
+    const brand = await createBrand(library, {name: input.name, colors: input.colors, defaults: input.defaults, guide: input.guide});
+    log(`Marca criada: ${brand.kit.name} (${brand.kit.id}).`);
+  }));
+  handle('updateBrand', (id: string, patch: BrandPatch) => runTask('Salvando marca', async () => {
+    const brand = brandOf(id);
+    if (!patch || typeof patch !== 'object') throw new Error('Alteração inválida.');
+    if (typeof patch.guide === 'string' && patch.guide.length > 200_000) throw new Error('Guia da marca muito longo.');
+    const kit = await updateBrand(library, brand.kit.id, patch);
+    await pushBrand(kit.id);
+  }));
+  // Substituir mantém a chave: os projetos continuam pedindo brand:<chave> e recebem o arquivo novo.
+  handle('putBrandAsset', (id: string, key: string, label: string, source?: string) => runTask('Salvando asset da marca', async () => {
+    const brand = brandOf(id);
+    let file = source;
+    if (file === undefined) {
+      const selected = await dialog.showOpenDialog(window, {title: `Arquivo para brand:${key}`, properties: ['openFile']});
+      if (selected.canceled) return;
+      file = selected.filePaths[0];
+    }
+    if (typeof file !== 'string' || !path.isAbsolute(file) || !(await fs.stat(file)).isFile()) throw new Error('Arquivo inválido.');
+    const kit = await putBrandAsset(library, brand.kit.id, key, label, file);
+    log(`brand:${key} atualizado em ${kit.name} (versão ${kit.version}).`);
+    await pushBrand(kit.id);
+  }));
+  handle('removeBrandAsset', (id: string, key: string) => runTask('Removendo asset da marca', async () => {
+    const brand = brandOf(id);
+    const asset = brand.kit.assets[key as string];
+    if (!asset) throw new Error('Asset não encontrado na marca.');
+    const answer = await dialog.showMessageBox(window, {type: 'warning', buttons: ['Cancelar', 'Remover'], defaultId: 0, cancelId: 0,
+      message: `Remover brand:${key} da marca ${brand.kit.name}?`,
+      detail: 'O arquivo é apagado da marca. Projetos que usam essa chave vão falhar até serem ajustados.'});
+    if (answer.response !== 1) return;
+    const kit = await removeBrandAsset(library, brand.kit.id, key);
+    await pushBrand(kit.id);
+  }));
+  handle('moveProject', (target: string, brandId: string) => runTask('Movendo projeto', async () => {
+    if (typeof target !== 'string' || !projects.some(p => p.root === target)) throw new Error('Projeto não encontrado na biblioteca.');
+    if (typeof brandId !== 'string') throw new Error('Marca inválida.');
+    const id = brandId ? brandOf(brandId).kit.id : '';
+    const summary = projects.find(p => p.root === target)!;
+    const answer = await dialog.showMessageBox(window, {type: 'question', buttons: ['Cancelar', 'Mover'], defaultId: 0, cancelId: 0,
+      message: id ? `Mover "${summary.name}" para a marca ${brandOf(id).kit.name}?` : `Mover "${summary.name}" para Avulsos?`,
+      detail: `A pasta do projeto será movida para ${id ? path.join(library, id) : library}. Nada é apagado.`});
+    if (answer.response !== 1) return;
+    const open = root && path.resolve(root) === path.resolve(target);
+    if (open) {
+      // A pasta não pode se mover sob os pés do preview, do terminal e da sessão do agente.
+      denyApprovals();
+      await remotion.stopStudio();
+      await terminal.open(null);
+      project = null;
+      root = null;
+    }
+    const moved = await moveProject(library, target, id);
+    log(`Projeto movido para ${moved}.`);
+    await refreshProjects();
+    if (open) {
+      await activate(moved, await openProject(moved));
+      await remotion.preview(moved, settings);
+    }
+  }));
+  handle('brandCandidates', async (target: string) => {
+    const {root, project} = current();
+    if (typeof target !== 'string' || path.resolve(target) !== path.resolve(root)) throw new Error('Projeto inválido.');
+    const live = await projectKit(root, project);
+    return live ? brandCandidates(root, live.kit) : [];
+  });
+  handle('applyBrandKeys', (target: string, files: string[]) => runTask('Aplicando chaves da marca', async () => {
+    const {root, project} = current();
+    if (typeof target !== 'string' || path.resolve(target) !== path.resolve(root)) throw new Error('Projeto inválido.');
+    if (!Array.isArray(files) || files.length > 200 || files.some(f => typeof f !== 'string')) throw new Error('Arquivos inválidos.');
+    const live = await projectKit(root, project);
+    if (!live) throw new Error('Este projeto não pertence a uma marca.');
+    const changedLines = await applyBrandKeys(root, live.kit, files);
+    project.changes.push({id: randomUUID(), relevant: true,
+      text: `O usuário trocou ${changedLines} caminho(s) de arquivo por chaves brand:* em remotion/src. Confira se o resultado visual continua correto e siga usando resolveAsset('brand:<chave>').`});
+    await persist(root, project);
+    log(`${changedLines} referência(s) trocadas por brand:*.`);
+  }));
+  handle('refreshBrand', () => runTask('Atualizando marca do projeto', async () => {
+    const {root, project} = current();
+    if (!project.brand) throw new Error('Este projeto não pertence a uma marca.');
+    if (!project.brand.lock) throw new Error('O projeto já acompanha a marca atual.');
+    const answer = await dialog.showMessageBox(window, {type: 'question', buttons: ['Cancelar', 'Atualizar'], defaultId: 0, cancelId: 0,
+      message: 'Atualizar este projeto para a marca atual?',
+      detail: `O projeto está congelado na versão ${project.brand.lock.version} da marca (snapshot do export). Atualizar faz o vídeo voltar a usar os assets e tokens atuais, o que pode mudar o resultado de um vídeo já entregue.`});
+    if (answer.response !== 1) return;
+    project.brand = {id: project.brand.id, ...(project.brand.overrides ? {overrides: project.brand.overrides} : {})};
+    await fs.rm(path.join(root, '.brand-snapshot'), {recursive: true, force: true});
+    await refreshBrand(root, project);
+    project.changes.push({id: randomUUID(), relevant: true,
+      text: 'O projeto voltou a acompanhar a marca ao vivo (snapshot descartado). Os assets e tokens podem ter mudado desde o último export.'});
+    await persist(root, project);
+    await remotion.preview(root, settings);
   }));
   const kinds: AssetKind[] = ['main', 'logo', 'image', 'video', 'audio', 'font', 'reference', 'document'];
   async function importFiles(kind: AssetKind, note: string, sources: string[]) {
@@ -276,7 +409,12 @@ function registerIPC() {
     project.messages.push({id: randomUUID(), role: 'system', text: 'Nova sessão: briefing, atualizações pendentes e referências essenciais serão reapresentados no próximo pedido.', at: new Date().toISOString()});
     await persist(root, project);
   }));
-  handle('preview', () => runTask('Iniciando preview', async () => {await remotion.preview(current().root, settings);}));
+  handle('preview', () => runTask('Iniciando preview', async () => {
+    const {root, project} = current();
+    // Reespelha o kit antes de subir o Studio: o preview sempre reflete a marca como ela está agora.
+    await refreshBrand(root, project);
+    await remotion.preview(root, settings);
+  }));
   handle('install', () => runTask('Instalando dependências', async () => {
     const {root} = current();
     await remotion.stopStudio();
@@ -284,13 +422,22 @@ function registerIPC() {
     await remotion.preview(root, settings);
   }));
   handle('render', () => runTask('Renderizando MP4', async () => {
-    const {root} = current();
+    const {root, project} = current();
     const selected = await dialog.showSaveDialog(window, {title: 'Renderizar vídeo MP4', defaultPath: path.join(root, 'renders', `video-${Date.now()}.mp4`), filters: [{name: 'Vídeo MP4', extensions: ['mp4']}]});
     if (selected.canceled || !selected.filePath) return;
     const output = selected.filePath.toLowerCase().endsWith('.mp4') ? selected.filePath : selected.filePath + '.mp4';
+    // Exportar congela a marca: o snapshot entra antes do render, então o MP4 e o .brand-snapshot batem.
+    let frozen: number | null = null;
+    if (project.brand && !project.brand.lock) {
+      frozen = await snapshotBrand(root, project);
+      await refreshBrand(root, project);
+      await persist(root, project);
+    }
+    await refreshBrand(root, project);
     await remotion.render(root, output, settings);
     lastRender = output;
     log(`Vídeo concluído: ${output}`);
+    if (frozen !== null) log(`Marca congelada na versão ${frozen} para este projeto. Use "Atualizar para a marca atual" quando quiser acompanhar a marca de novo.`);
   }));
   handle('reveal', async () => {if (lastRender) shell.showItemInFolder(lastRender); else await shell.openPath(current().root);});
   handle('openRender', async () => {
@@ -362,11 +509,37 @@ function registerIPC() {
     await saveSettings();
     log(engine === 'claude' ? 'IA conectada: Claude Code.' : `IA conectada: OpenCode (${model}).`);
   }));
-  const logins: LoginKind[] = ['claude', 'opencode-openai', 'opencode-copilot', 'opencode-other', 'install-opencode'];
+  const logins: LoginKind[] = ['claude', 'opencode-openai', 'opencode-copilot', 'opencode-other', 'install-opencode', 'elevenlabs'];
   handle('loginStart', (kind: LoginKind, cols: number, rows: number) => {
     if (!logins.includes(kind) || !size(cols, 1000) || !size(rows, 500)) throw new Error('Login inválido.');
-    return login.start(kind, settings, cols, rows);
+    if (kind !== 'elevenlabs') return login.start(kind, settings, cols, rows);
+    if (!settings.engine) throw new Error('Escolha a IA antes de conectar a ElevenLabs.');
+    return (async () => {
+      if (settings.engine === 'claude') await registerElevenlabsForClaude(processes, settings);
+      await login.start(kind, settings, cols, rows);
+    })();
   });
+  // Modo Auto is a plain switch (not a task), so it can be flipped while the agent is working.
+  handle('autoMode', async (enabled: boolean) => {
+    if (typeof enabled !== 'boolean') throw new Error('Opção inválida.');
+    settings = {...settings, autoMode: enabled};
+    await saveSettings();
+    log(enabled ? 'Modo Auto ativado: a IA trabalha sem pedir permissão.' : 'Modo Auto desativado: comandos sensíveis voltam a pedir confirmação.');
+    if (enabled) for (const {answer} of [...approvals.values()]) answer(true);
+    changed();
+  });
+  // Turning ElevenLabs on is checked against the sign-in of the CLI that will actually use it.
+  handle('elevenlabs', (enabled: boolean) => runTask('Configurando ElevenLabs', async () => {
+    if (typeof enabled !== 'boolean') throw new Error('Opção inválida.');
+    if (enabled) {
+      const status = await providerStatus(processes, settings);
+      const engine = settings.engine === 'opencode' ? 'opencode' : 'claude';
+      if (!status.elevenlabs[engine]) throw new Error('A ElevenLabs ainda não está conectada para a IA atual. Clique em Conectar e conclua o login.');
+    }
+    settings = {...settings, elevenlabs: enabled};
+    await saveSettings();
+    log(enabled ? 'ElevenLabs conectada: as IAs podem gerar narração.' : 'ElevenLabs desativada.');
+  }));
   handle('loginWrite', (data: string) => {if (typeof data === 'string' && data.length <= 100_000) login.write(data);});
   handle('loginResize', (cols: number, rows: number) => {if (size(cols, 1000) && size(rows, 500)) login.resize(cols, rows);});
   handle('loginStop', () => login.stop());
@@ -404,8 +577,25 @@ function registerIPC() {
 protocol.registerSchemesAsPrivileged([{scheme: 'fp-media', privileges: {standard: true, secure: true, stream: true, supportFetchAPI: true}}]);
 const mediaTypes: Record<string, string> = {'.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif'};
+/** fp-media://brand/<id>/<chave> serve os assets do kit para as previews da página da marca. */
+async function serveBrandAsset(url: URL) {
+  const [id, key] = url.pathname.slice(1).split('/').map(decodeURIComponent);
+  const brand = brands.find(b => b.kit.id === id);
+  const asset = brand && !brand.kit.assets[key]?.local ? brand.kit.assets[key] : undefined;
+  if (!brand || !asset) return new Response(null, {status: 404});
+  const dir = path.resolve(kitDir(library, brand.kit.id));
+  const file = path.resolve(dir, asset.file);
+  if (!file.startsWith(dir + path.sep)) return new Response(null, {status: 403});
+  const type = mediaTypes[path.extname(file).toLowerCase()] ?? (path.extname(file).toLowerCase() === '.svg' ? 'image/svg+xml' : '');
+  if (!type) return new Response(null, {status: 415});
+  // Preview-only: nosniff e um CSP vazio impedem que um SVG da marca execute qualquer coisa.
+  return new Response(Readable.toWeb(createReadStream(file)) as unknown as ReadableStream, {status: 200,
+    headers: {'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'"}});
+}
 async function serveMedia(request: Request) {
-  const id = decodeURIComponent(new URL(request.url).pathname.slice(1));
+  const url = new URL(request.url);
+  if (url.host === 'brand') return serveBrandAsset(url);
+  const id = decodeURIComponent(url.pathname.slice(1));
   const asset = project?.assets.find(a => a.id === id && ['main', 'video', 'image', 'logo'].includes(a.kind));
   if (!asset || !root) return new Response(null, {status: 404});
   const file = path.resolve(root, asset.path);
@@ -434,6 +624,8 @@ app.whenReady().then(async () => {
     if (EFFORTS.includes(saved.effort)) settings.effort = saved.effort;
     if (saved.engine === 'claude' || saved.engine === 'opencode') settings.engine = saved.engine;
     if (typeof saved.opencodeModel === 'string' && MODEL_ID.test(saved.opencodeModel)) settings.opencodeModel = saved.opencodeModel;
+    if (typeof saved.elevenlabs === 'boolean') settings.elevenlabs = saved.elevenlabs;
+    if (typeof saved.autoMode === 'boolean') settings.autoMode = saved.autoMode;
     for (const key of ['transcribe', 'frames'] as const) if (typeof saved[key] === 'boolean') settings[key] = saved[key];
   } catch {}
   window = new BrowserWindow({width: 1440, height: 940, minWidth: 1000, minHeight: 700, title: 'FramePilot',

@@ -93,6 +93,12 @@ process.stdin.on('end', () => {
     assert.ok(calls[0].args.includes('--effort') && calls[0].args.includes('low'));
     assert.equal(calls[1].prompt, '[USER REQUEST]\nSegundo pedido');
     assert.deepEqual(calls[1].args.slice(-2), ['--resume', session]);
+    assert.equal(calls[0].args[calls[0].args.indexOf('--permission-mode') + 1], 'acceptEdits');
+    assert.ok(!calls[0].args[calls[0].args.indexOf('--tools') + 1].includes('Bash'), 'no shell outside Modo Auto');
+    await claude.send(root, reopened, 'Pedido livre', claudeWith(mock, {autoMode: true}));
+    const auto = (await fs.readFile(path.join(root, 'calls.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line)).at(-1);
+    assert.equal(auto.args[auto.args.indexOf('--permission-mode') + 1], 'auto');
+    assert.ok(auto.args[auto.args.indexOf('--tools') + 1].includes('Bash,WebFetch,WebSearch'));
     queueAsset(reopened, assetId, true);
     await persist(root, reopened);
     await claude.send(root, reopened, 'Outro pedido', claudeWith(path.join(base, 'missing-cli')));
@@ -145,6 +151,19 @@ process.stdin.on('end', () => {
     const config = JSON.parse(await fs.readFile(calls[0].config, 'utf8'));
     assert.equal(config.permission.bash, 'deny');
     assert.ok(config.mcp.framepilot.command.at(-1) === root);
+    assert.equal(config.mcp.elevenlabs, undefined, 'ElevenLabs stays off until the user connects it');
+    await agent.send(root, project, 'Narração', {...settings, elevenlabs: true});
+    const voiced = JSON.parse(await fs.readFile(calls[0].config, 'utf8'));
+    assert.deepEqual(voiced.mcp.elevenlabs, {type: 'remote', url: 'https://api.elevenlabs.io/v1/mcp', enabled: true});
+    const last = (await fs.readFile(path.join(root, 'calls.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line)).at(-1);
+    assert.match(last.prompt, /ElevenLabs está conectada \(ferramentas elevenlabs_\*\)/);
+    await agent.send(root, project, 'Livre', {...settings, autoMode: true});
+    const free = JSON.parse(await fs.readFile(calls[0].config, 'utf8'));
+    assert.equal(free.permission.bash, 'allow');
+    assert.equal(free.permission.question, 'deny');
+    // The skill library index and the community library are copied into the project.
+    await fs.access(path.join(root, '.claude/skills/video-skills-library/SKILL.md'));
+    await fs.access(path.join(root, '.claude/video-skills/tiktok-video-skills/caption-animation/SKILL.md'));
   } finally {await processes.stopAll(); await fs.rm(base, {recursive: true, force: true});}
 });
 

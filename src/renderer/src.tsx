@@ -49,7 +49,7 @@ function App() {
   const [modal, setModal] = useState<'new' | 'brief' | null>(null);
   const [brief, setBrief] = useState<Brief>(defaults);
   const [tools, setTools] = useState<Settings>({...DEFAULT_SETTINGS});
-  const [connecting, setConnecting] = useState(false);
+  const [connecting, setConnecting] = useState<false | 'ai' | 'voice'>(false);
   const [claudeChoices, setClaudeChoices] = useState<ClaudeOptions>();
   const [stream, setStream] = useState('');
   const [checking, setChecking] = useState('');
@@ -158,7 +158,18 @@ function App() {
       <section className="settings-card"><h2>Inteligência artificial</h2>
         <p>Quem faz as edições dos seus vídeos. Troque quando quiser; a conversa de cada projeto recomeça com o briefing ao trocar de provedor.</p>
         <code className="path">{engineLabel}</code>
-        <div className="row"><Button icon="spark" disabled={busy} onClick={() => setConnecting(true)}>Trocar IA</Button></div>
+        <div className="row"><Button icon="spark" disabled={busy} onClick={() => setConnecting('ai')}>Trocar IA</Button></div>
+      </section>
+      <section className="settings-card"><h2>Modo Auto</h2>
+        <p>A IA trabalha sem pedir permissão: usa terminal e internet, instala pacotes e roda comandos sem abrir o popup de confirmação. No Claude, ativa o modo auto do Claude Code, que ainda bloqueia ações claramente perigosas.</p>
+        <label className="switch"><input type="checkbox" role="switch" checked={state.settings.autoMode} onChange={e => void act(() => api.autoMode(e.target.checked))} />
+          <span><span className="menu-label">{state.settings.autoMode ? 'Ativado' : 'Desativado'}</span><small>Vale a partir do próximo pedido. Comandos aguardando confirmação são liberados ao ativar.</small></span></label>
+      </section>
+      <section className="settings-card"><h2>Narração com IA</h2>
+        <p>Com a ElevenLabs conectada, a IA gera locução, vozes e efeitos sonoros para o vídeo. Usa os créditos da sua conta ElevenLabs. O login vale para a IA escolhida acima.</p>
+        <code className="path">{state.settings.elevenlabs ? 'ElevenLabs ativa' : 'Desativada'}</code>
+        <div className="row"><Button icon="spark" disabled={busy || !state.settings.engine} onClick={() => setConnecting('voice')}>{state.settings.elevenlabs ? 'Reconectar ElevenLabs' : 'Conectar ElevenLabs'}</Button>
+          {state.settings.elevenlabs && <Button variant="ghost" disabled={busy} onClick={() => void act(() => api.elevenlabs(false))}>Desativar</Button>}</div>
       </section>
       <section className="settings-card"><h2>Ferramentas locais</h2>
         <p>Deixe em branco para detectar pelo PATH. Use o caminho do executável, sem argumentos.</p>
@@ -187,6 +198,7 @@ function App() {
     })()}
     {/* First run (no provider chosen yet) or "Trocar IA" in Configurações: sign-in popup over the app. */}
     {(!state.settings.engine || connecting) && <ConnectDialog api={api} act={act} settings={state.settings} busy={busy}
+      step={connecting === 'voice' ? 'voice' : 'ai'} onPin={() => setConnecting(c => c || 'ai')}
       onClose={state.settings.engine ? () => setConnecting(false) : undefined} onDone={() => setConnecting(false)} />}
     {diagnostics && <Diagnostics state={state} api={api} act={act} busy={busy} error={error} onClose={() => setDiagnostics(false)} />}
     {modal && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="brief-title">

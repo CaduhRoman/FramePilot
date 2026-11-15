@@ -487,6 +487,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .brand-openai { background: #fff; color: #000; }
 .brand-copilot { background: #000; color: #fff; box-shadow: 0 0 0 1px #3a3a3a inset; }
 .brand-deepseek { background: #4d6bfe; color: #fff; }
+.brand-elevenlabs { background: #fff; color: #000; }
 .brand-other { background: var(--surface-3); color: var(--text-2); }
 
 .auth-providers { display: flex; flex-direction: column; gap: var(--s2); }
@@ -514,6 +515,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .auth-links { display: flex; justify-content: center; gap: var(--s2); color: var(--text-disabled); font-size: var(--fs-sm); }
 .auth-links button { padding: 0; border: 0; background: none; color: var(--text-2); cursor: pointer; }
 .auth-links button:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
+.auth-skip { align-self: center; padding: var(--s2) var(--s4); border: 0; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.auth-skip:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
 .auth-links button:disabled { color: var(--text-disabled); cursor: default; }
 .auth-or { display: flex; align-items: center; gap: var(--s3); color: var(--text-disabled); font-size: var(--fs-sm); }
 .auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
@@ -552,3 +555,15 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); }
 .approval-actions small { margin-right: auto; color: var(--text-disabled); font-size: var(--fs-sm); }
 @media (prefers-reduced-motion: reduce) { .approval-dialog { animation: none; } }
+
+/* Modo Auto switch and the "Auto" pill on the chat options button. */
+.switch { display: flex; align-items: flex-start; gap: var(--s3); cursor: pointer; }
+.switch input { appearance: none; flex: none; position: relative; width: 34px; height: 20px; margin: 2px 0 0; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface-3); cursor: pointer; transition: background .15s, border-color .15s; }
+.switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-2); transition: transform .15s, background .15s; }
+.switch input:checked { background: var(--accent); border-color: var(--accent); }
+.switch input:checked::after { transform: translateX(14px); background: var(--on-primary); }
+.switch input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.switch > span { display: grid; gap: 2px; }
+.switch small { color: var(--text-2); }
+.auto-pill { margin-left: var(--s2); padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--on-primary); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.option-group .switch { padding: var(--s2); }

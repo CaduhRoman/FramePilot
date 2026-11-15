@@ -21,7 +21,8 @@ const LOGIN_TITLES: Record<LoginKind, [Brand, string]> = {
   'opencode-openai': ['openai', 'Entrando com ChatGPT'],
   'opencode-copilot': ['copilot', 'Entrando com GitHub Copilot'],
   'opencode-other': ['other', 'Conectar outro provedor'],
-  'install-opencode': ['deepseek', 'Instalando o OpenCode']
+  'install-opencode': ['deepseek', 'Instalando o OpenCode'],
+  'elevenlabs': ['elevenlabs', 'Conectando a ElevenLabs']
 };
 
 /** Interactive login in a pseudo-terminal: the CLI opens the official sign-in page in the browser. */
@@ -88,7 +89,10 @@ function Provider({brand, name, plan, state, account, disabled, onClick, onSwitc
 }
 
 /** Sign-in popup shown over the app on first run (and from Configurações → Trocar IA). */
-export function ConnectDialog({api, act, settings, busy, onClose, onDone}: {api: API; act: Act; settings: Settings; busy: boolean; onClose?: () => void; onDone: () => void}) {
+export function ConnectDialog({api, act, settings, busy, step: initialStep = 'ai', onPin, onClose, onDone}: {
+  api: API; act: Act; settings: Settings; busy: boolean; step?: 'ai' | 'voice'; onPin: () => void; onClose?: () => void; onDone: () => void;
+}) {
+  const [step, setStep] = useState(initialStep);
   const [status, setStatus] = useState<ProviderStatus>();
   const [models, setModels] = useState<string[]>([]);
   const [chosen, setChosen] = useState<Record<string, string>>({});
@@ -107,13 +111,20 @@ export function ConnectDialog({api, act, settings, busy, onClose, onDone}: {api:
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);
   }, [onClose, login]);
-  const connect = (engine: AgentEngine, model?: string) => void act(async () => {await api.connect(engine, model); onDone();});
+  // After choosing the AI, offer ElevenLabs once (optional). The parent keeps the popup open meanwhile.
+  const finish = (engine: AgentEngine) => {if (settings.elevenlabs && status?.elevenlabs[engine]) onDone(); else setStep('voice');};
+  const connect = (engine: AgentEngine, model?: string) => void act(async () => {onPin(); await api.connect(engine, model); finish(engine);});
   const closeLogin = (code: number | null) => {
     const wasInstall = login === 'install-opencode';
+    const wasVoice = login === 'elevenlabs';
     setLogin(null);
     void act(async () => {
       const next = await refresh();
-      if (wasInstall && freeAfterInstall && code === 0 && next.opencode.installed) {await api.connect('opencode', FREE_MODEL); onDone();}
+      if (wasVoice) {
+        if (next.elevenlabs[settings.engine === 'opencode' ? 'opencode' : 'claude']) {await api.elevenlabs(true); onDone();}
+        return;
+      }
+      if (wasInstall && freeAfterInstall && code === 0 && next.opencode.installed) {onPin(); await api.connect('opencode', FREE_MODEL); finish('opencode');}
       setFreeAfterInstall(false);
     });
   };
@@ -126,7 +137,8 @@ export function ConnectDialog({api, act, settings, busy, onClose, onDone}: {api:
   };
   return <div className="overlay auth-overlay">
     <section className={`auth-dialog ${login ? 'is-login' : ''}`} role="dialog" aria-modal="true" aria-labelledby="auth-title">
-      {login ? <LoginView api={api} kind={login} onClose={closeLogin} /> : <>
+      {login ? <LoginView api={api} kind={login} onClose={closeLogin} /> : step === 'voice' ? <VoiceStep status={status} settings={settings} busy={busy}
+        onConnect={() => setLogin('elevenlabs')} onEnable={() => void act(async () => {await api.elevenlabs(true); onDone();})} onSkip={onDone} /> : <>
         {onClose && <IconButton className="auth-close" label="Fechar" icon="close" onClick={onClose} />}
         <header className="auth-head">
           <img className="auth-logo" src={appLogo} alt="" />
@@ -175,4 +187,27 @@ export function ConnectDialog({api, act, settings, busy, onClose, onDone}: {api:
       </>}
     </section>
   </div>;
+}
+
+/** Optional second step: ElevenLabs narration through its hosted MCP server (OAuth in the browser, no API key). */
+function VoiceStep({status, settings, busy, onConnect, onEnable, onSkip}: {
+  status?: ProviderStatus; settings: Settings; busy: boolean; onConnect: () => void; onEnable: () => void; onSkip: () => void;
+}) {
+  const engine = settings.engine === 'opencode' ? 'opencode' : 'claude';
+  const signedIn = status?.elevenlabs[engine];
+  return <>
+    <IconButton className="auth-close" label="Fechar" icon="close" onClick={onSkip} />
+    <header className="auth-head">
+      <BrandMark brand="elevenlabs" size={48} />
+      <h2 id="auth-title">Narração com IA</h2>
+      <p>Conecte a ElevenLabs para a IA gerar locução, vozes e efeitos sonoros direto no seu vídeo. Opcional.</p>
+    </header>
+    <div className="auth-providers">
+      <Provider brand="elevenlabs" name="ElevenLabs" plan="Plano gratuito ou pago · usa os créditos da sua conta"
+        state={!status ? 'checking' : signedIn ? 'connected' : 'signin'} disabled={busy}
+        onClick={signedIn ? onEnable : onConnect} onSwitch={signedIn ? onConnect : undefined} />
+    </div>
+    <button className="auth-skip" disabled={busy} onClick={onSkip}>Agora não</button>
+    <p className="auth-foot">O login abre na página oficial da ElevenLabs; o FramePilot não vê sua senha nem chaves. Ative ou desative depois em Configurações.</p>
+  </>;
 }

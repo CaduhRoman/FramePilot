@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
-    "test:smoke": "node --import tsx --test tests/smoke.test.ts",
+    "test:smoke": "node --import tsx --test tests/smoke.test.ts tests/brand.test.ts",
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {

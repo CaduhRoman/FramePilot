@@ -9,6 +9,46 @@ export interface Brief {
   notes: string;
 }
 export type AssetKind = 'main' | 'logo' | 'image' | 'video' | 'audio' | 'font' | 'reference' | 'document';
+// ---------------------------------------------------------------------------
+// Marcas (Brand): um nível acima do projeto. Guardam a identidade visual e os
+// assets globais em <library>/<id>/brand/. Projetos dentro da pasta herdam tudo.
+// ---------------------------------------------------------------------------
+export interface BrandColors {primary: string; secondary: string; background: string; text: string; accent?: string}
+/** Uma fonte da marca. `asset` aponta para uma chave de `assets` em vez de repetir o caminho. */
+export interface BrandFont {family: string; weight?: string; asset?: string}
+export interface BrandSafeArea {top: number; right: number; bottom: number; left: number}
+export interface BrandDefaults {width: number; height: number; fps: number; durationInSeconds: number; safeArea?: BrandSafeArea}
+export type BrandAssetKind = 'image' | 'video' | 'audio' | 'font' | 'other';
+/** `file` é relativo à pasta brand/ da marca, ou à raiz pública do projeto quando `local`. */
+export interface BrandAsset {file: string; label: string; kind: BrandAssetKind; local?: boolean}
+/** Esqueleto de projeto oferecido pela marca na tela de novo projeto. */
+export interface BrandTemplate {id: string; name: string; description?: string; width: number; height: number; fps: number; duration: number; style?: string}
+export interface BrandKit {
+  id: string;
+  name: string;
+  /** Incrementa a cada alteração no kit; é o número que o snapshot do projeto registra. */
+  version: number;
+  colors: BrandColors;
+  fonts: Record<string, BrandFont>;
+  defaults: BrandDefaults;
+  assets: Record<string, BrandAsset>;
+  templates: BrandTemplate[];
+}
+/** Ajustes pontuais de um projeto, sem copiar o resto do kit. */
+export interface BrandOverrides {
+  colors?: Partial<BrandColors>;
+  fonts?: Record<string, Partial<BrandFont>>;
+  defaults?: Partial<BrandDefaults>;
+  /** Troca o arquivo de uma chave só neste projeto; com `local`, aponta para um asset do próprio projeto. */
+  assets?: Record<string, BrandAsset>;
+}
+/** O vínculo do projeto com a marca. Sem `lock`, o projeto acompanha a marca ao vivo. */
+export interface ProjectBrand {id: string; overrides?: BrandOverrides; lock?: {version: number; at: string}}
+export interface BrandPatch {name?: string; colors?: Partial<BrandColors>; fonts?: Record<string, BrandFont>; defaults?: Partial<BrandDefaults>; guide?: string}
+export interface BrandInput {name: string; colors?: Partial<BrandColors>; defaults?: Partial<BrandDefaults>; guide?: string}
+/** Marca lida do disco, com o guia e a contagem de projetos, para a home e a página da marca. */
+export interface BrandDetail {root: string; kit: BrandKit; guide: string; projects: number}
+
 /** Kept range of a source video, in seconds. */
 export interface Segment {start: number; end: number}
 export interface Asset {
@@ -41,12 +81,18 @@ export interface Project {
   /** Requeue these references when starting a new session. */
   essentialAssetIds?: string[];
   material?: Material;
+  /** Vínculo com a marca; ausente em projetos avulsos, que seguem funcionando como antes. */
+  brand?: ProjectBrand;
   /** Summary of the aligned Whisper transcripts, written by the harness. */
   transcript?: string;
   /** Summary of the extracted video frames, written by the harness. */
   frames?: string;
 }
-export interface ProjectSummary {root: string; name: string; width: number; height: number; duration: number; messages: number; hasSession: boolean; updatedAt: string}
+export interface ProjectSummary {root: string; name: string; width: number; height: number; duration: number; messages: number; hasSession: boolean; updatedAt: string;
+  /** Pasta da marca que contém o projeto; ausente em "Avulsos". */
+  brandId?: string;
+  /** Versão da marca congelada no último export, quando houver. */
+  brandLock?: number}
 /** '' until the user picks a provider on the first-run connect screen. */
 export type Engine = '' | AgentEngine;
 export type AgentEngine = 'claude' | 'opencode';
@@ -55,16 +101,22 @@ export const FREE_MODEL = 'opencode/deepseek-v4.1-flash-free';
 export interface Settings {
   claudePath: string; nodePath: string; npmPath: string; transcribe: boolean; frames: boolean; model: string; effort: string;
   engine: Engine; opencodePath: string; opencodeModel: string;
+  /** ElevenLabs hosted MCP (narration, voices, sound effects) offered to the agent once the user signs in. */
+  elevenlabs: boolean;
+  /** Modo Auto: the agent works without asking (Claude Code's auto mode, OpenCode with every permission, FramePilot commands pre-approved). */
+  autoMode: boolean;
 }
 export const DEFAULT_SETTINGS: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: '', effort: '',
-  engine: '', opencodePath: '', opencodeModel: FREE_MODEL};
+  engine: '', opencodePath: '', opencodeModel: FREE_MODEL, elevenlabs: false, autoMode: false};
 /** What the connect screen needs to know about each CLI. */
 export interface ProviderStatus {
   claude: {installed: boolean; loggedIn: boolean; account?: string; method?: string};
   opencode: {installed: boolean; version?: string; providers: string[]};
+  /** ElevenLabs sign-in per agent CLI (each keeps its own OAuth token). */
+  elevenlabs: {claude: boolean; opencode: boolean};
 }
 /** Interactive logins and installs run in a pseudo-terminal shown on the connect screen. */
-export type LoginKind = 'claude' | 'opencode-openai' | 'opencode-copilot' | 'opencode-other' | 'install-opencode';
+export type LoginKind = 'claude' | 'opencode-openai' | 'opencode-copilot' | 'opencode-other' | 'install-opencode' | 'elevenlabs';
 export const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 export interface ClaudeOptions {models: {value: string; label: string}[]; efforts: string[]; notice: string}
 /** A command run by an agent through FramePilot's terminal tools. Output is fetched separately. */
@@ -87,6 +139,7 @@ export interface State {
   lastRender: string | null;
   library: string;
   projects: ProjectSummary[];
+  brands: BrandDetail[];
   commands: CommandRecord[];
   /** Agent commands waiting for the user's answer, oldest first. */
   approvals: CommandRecord[];
@@ -95,11 +148,27 @@ export type AppEvent = {type: 'state'; state: State} | {type: 'log'; text: strin
   | {type: 'pty'; data: string} | {type: 'login'; data: string} | {type: 'login-exit'; code: number} | {type: 'command-output'; id: string; stream: 'stdout' | 'stderr'; text: string};
 export interface API {
   state(): Promise<State>;
-  create(brief: Brief): Promise<void>;
+  create(brief: Brief, brandId?: string): Promise<void>;
   open(root?: string): Promise<void>;
   close(): Promise<void>;
   showLibrary(): Promise<void>;
   save(brief: Brief): Promise<void>;
+  // --- Marcas ---
+  /** Cria a pasta da marca com brand/brand.json, BRAND.md e as subpastas do kit. */
+  createBrand(input: BrandInput): Promise<void>;
+  /** Nome, cores, fontes, defaults e BRAND.md. Toda alteração incrementa brand.version. */
+  updateBrand(id: string, patch: BrandPatch): Promise<void>;
+  /** Adiciona ou substitui o asset de uma chave. Substituir mantém a chave e incrementa a versão. */
+  putBrandAsset(id: string, key: string, label: string, source?: string): Promise<void>;
+  removeBrandAsset(id: string, key: string): Promise<void>;
+  /** Move um projeto para a pasta de uma marca, ou para "Avulsos" com brandId vazio. */
+  moveProject(root: string, brandId: string): Promise<void>;
+  /** Caminhos de logo hardcoded que o projeto poderia trocar por brand:<chave>. */
+  brandCandidates(root: string): Promise<{file: string; line: number; text: string; key: string}[]>;
+  /** Aplica as trocas confirmadas pelo usuário em remotion/src. */
+  applyBrandKeys(root: string, files: string[]): Promise<void>;
+  /** Desfaz o lock: o projeto volta a acompanhar a marca ao vivo. */
+  refreshBrand(): Promise<void>;
   importAsset(kind: AssetKind, note: string): Promise<void>;
   /** Opens the file picker and returns the chosen paths without importing them. */
   pickFiles(): Promise<string[]>;
@@ -130,6 +199,10 @@ export interface API {
   /** Saves the chosen engine (and OpenCode model) and leaves the connect screen. */
   connect(engine: AgentEngine, model?: string): Promise<void>;
   loginStart(kind: LoginKind, cols: number, rows: number): Promise<void>;
+  /** Turns ElevenLabs on for the agent (only after sign-in for the current engine) or off. */
+  elevenlabs(enabled: boolean): Promise<void>;
+  /** Modo Auto on or off; applies from the next request and answers commands already waiting. */
+  autoMode(enabled: boolean): Promise<void>;
   loginWrite(data: string): Promise<void>;
   loginResize(cols: number, rows: number): Promise<void>;
   loginStop(): Promise<void>;

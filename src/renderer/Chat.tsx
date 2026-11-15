@@ -69,18 +69,28 @@ function Notice({message, onDiagnostics}: {message: ChatMessage; onDiagnostics: 
 }
 
 function OptionsMenu({settings, choices, busy, act, api}: {settings: Settings; choices?: ClaudeOptions; busy: boolean; act: Act; api: API}) {
-  const models = choices?.models ?? [{value: settings.model, label: 'Carregando…'}];
+  // OpenCode keeps its own model setting and has no effort levels.
+  const opencode = settings.engine === 'opencode';
+  const current = opencode ? settings.opencodeModel : settings.model;
+  const models = choices?.models ?? [{value: current, label: 'Carregando…'}];
   const efforts = choices?.efforts ?? [settings.effort];
   const disabled = busy || !choices;
   const set = (model: string, effort: string) => void act(() => api.claudePreference(model, effort));
-  return <Menu placement="above" align="start" className="options-popover" trigger={props => <Button {...props} variant="ghost" icon="sliders" aria-label="Opções da IA: modelo e esforço" title="Modelo e esforço">Opções</Button>}>
+  return <Menu placement="above" align="start" className="options-popover" trigger={props => <Button {...props} variant="ghost" icon="sliders" aria-label={`Opções da IA: modelo, esforço e permissões${settings.autoMode ? ' (Modo Auto ativo)' : ''}`} title="Modelo, esforço e permissões">Opções{settings.autoMode && <span className="auto-pill">Auto</span>}</Button>}>
     {() => <div role="dialog" aria-label="Opções da IA">
       <fieldset className="option-group" disabled={disabled}><legend>Modelo</legend>
-        {!models.some(m => m.value === settings.model) && <Radio checked label={`${settings.model} (indisponível)`} hint="Salvo anteriormente; não anunciado pelo CLI." onSelect={() => {}} />}
-        {models.map(m => <Radio key={m.value} checked={m.value === settings.model} label={m.label} hint={MODEL_HINTS[m.value] ?? 'Modelo anunciado pela instalação local.'} onSelect={() => set(m.value, settings.effort)} />)}
+        {choices && current && !models.some(m => m.value === current) && (opencode
+          ? <Radio checked label={`${current} (indisponível)`} hint="Não aparece entre os modelos liberados para as credenciais deste computador." onSelect={() => {}} />
+          // The Claude CLI help lists only aliases, but --model also accepts full IDs such as claude-opus-5-5.
+          : <Radio checked label={current} hint="Modelo salvo nas configurações (ID completo)." onSelect={() => {}} />)}
+        {models.map(m => <Radio key={m.value} checked={m.value === current} label={m.label} hint={MODEL_HINTS[m.value] ?? (m.value.endsWith('-free') ? 'Gratuito pelo OpenCode.' : 'Modelo anunciado pela instalação local.')} onSelect={() => set(m.value, settings.effort)} />)}
       </fieldset>
-      <fieldset className="option-group" disabled={disabled}><legend>Esforço</legend>
+      {!opencode && <fieldset className="option-group" disabled={disabled}><legend>Esforço</legend>
         {efforts.map(e => <Radio key={e} checked={e === settings.effort} label={EFFORTS[e]?.[0] ?? e} hint={EFFORTS[e]?.[1] ?? ''} onSelect={() => set(settings.model, e)} />)}
+      </fieldset>}
+      <fieldset className="option-group"><legend>Permissões</legend>
+        <label className="switch"><input type="checkbox" role="switch" checked={settings.autoMode} onChange={e => void act(() => api.autoMode(e.target.checked))} />
+          <span><span className="menu-label">Modo Auto</span><small>A IA usa terminal e internet e roda comandos sem pedir permissão a cada passo.</small></span></label>
       </fieldset>
       <p className="help">Seus arquivos são enviados como caminhos locais, sem anexar vídeos completos.{choices?.notice ? ` ${choices.notice}` : ''}</p>
     </div>}

@@ -2,9 +2,19 @@ import {ensureProjectSkills} from './skills';
 import {randomUUID} from 'node:crypto';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
+import {brandContext, COMPONENTS_DIR, kitDirOf, projectKit, SNAPSHOT_DIR, syncProjectBrand} from './brand';
 import type {AssetKind, AssetPatch, Brief, Project, ProjectSummary, Segment} from '../shared/types';
 
 export const REMOTION_VERSION = '4.0.533';
+/**
+ * Bloco de contexto da marca, por projeto. É dado derivado (relido do disco a cada abertura),
+ * então vive em memória e nunca entra no project.json.
+ */
+const brandBlocks = new Map<string, string>();
+export function setBrandBlock(root: string, text: string) {
+  if (text) brandBlocks.set(root, text); else brandBlocks.delete(root);
+}
+const brandBlock = (root?: string) => (root && brandBlocks.get(root)) || '';
 export const kinds: AssetKind[] = ['main', 'logo', 'image', 'video', 'audio', 'font', 'reference', 'document'];
 export function queueAsset(project: Project, id: string, pending: boolean) {
   if (!project.assets.some(a => a.id === id)) throw new Error('Arquivo não encontrado.');
@@ -155,8 +165,9 @@ export function validateBrief(input: Brief): Brief {
   return {name: input.name.trim(), briefing: input.briefing, width: input.width, height: input.height,
     fps: input.fps, duration: input.duration, style: input.style, notes: input.notes};
 }
-export function context(project: Project): string {
+export function context(project: Project, root?: string): string {
   const b = project.brief;
+  const brand = brandBlock(root);
   return `# FramePilot — contexto de edição de vídeo\n
 Você trabalha no projeto local de vídeo controlado pelo harness FramePilot.
 Edite diretamente remotion/src para realizar os pedidos: cortes, montagem, ritmo, transições,
@@ -173,6 +184,7 @@ Duração: ${b.duration}s (${Math.round(b.duration * b.fps)} frames)
 Direção visual: ${b.style}
 Observações: ${b.notes}
 
+${brand ? `## Marca\n${brand}\n` : ''}
 ## Vídeo principal (material central da edição)
 ${mainContext(project)}
 
@@ -189,6 +201,7 @@ ${framesContext(project)}
 
 ## Skills de edição
 Leia .claude/skills/video-craft/SKILL.md e craft.md em cada pedido de edição.
+Para história, movimento, legendas, som e estilo, consulte .claude/skills/hyperframes-craft/SKILL.md.
 Consulte CLAUDE.md e outras skills locais relevantes.
 
 ## Estrutura e contrato do harness
@@ -197,6 +210,7 @@ remotion/public/assets/ = cópias dos assets usados pelo preview e render.
 remotion/src/index.ts = entrada; remotion/src/Root.tsx = composição principal.
 remotion/src/Video.tsx = edição livre; remotion/src/project-settings.json = configuração gerenciada.
 project.json e CONTEXT.md são gerenciados pelo aplicativo: não os altere.
+${brand ? `remotion/src/brand.tsx, remotion/src/brand-kit.json, remotion/public/brand/ e remotion/src/${COMPONENTS_DIR}/ são gerados pelo app a partir da marca: não os edite.\n` : ''}
 Mantenha uma composição com ID Main e use project-settings.json para resolução, FPS e duração.
 Use ferramentas oficiais do Remotion: Sequence, Img, staticFile e Video/Audio de @remotion/media.
 Vídeo: use Video de @remotion/media (não OffthreadVideo nem Html5Video); recorte com trimBefore/durationInFrames.
@@ -211,21 +225,22 @@ Trabalhe apenas dentro deste projeto. Responda de forma breve em português.
 O contexto completo é entregue no primeiro pedido da sessão; depois apenas deltas e o pedido atual.
 `;
 }
-export function promptFor(project: Project, request: string) {
+export function promptFor(project: Project, request: string, root?: string) {
   const changes = project.changes.filter(c => c.relevant);
   const assetIds = (project.pendingAssetIds ?? []).filter(id => project.assets.some(a => a.id === id));
   const prefix = project.session.initialSent
     ? (changes.length ? `[NEW PROJECT CONTEXT]\n${changes.map(c => c.text).join('\n\n')}\n\n` : '')
-    : `[INITIAL PROJECT CONTEXT]\n${sessionContext(project)}\n${changes.length ? `\n[PROJECT UPDATES]\n${changes.map(c => c.text).join('\n\n')}\n` : ''}`;
+    : `[INITIAL PROJECT CONTEXT]\n${sessionContext(project, root)}\n${changes.length ? `\n[PROJECT UPDATES]\n${changes.map(c => c.text).join('\n\n')}\n` : ''}`;
   const attachments = assetIds.length ? `[REFERÊNCIAS DISPONIBILIZADAS NESTE PEDIDO — leitura não confirmada]\n${assetContext(project, assetIds)}\n\n` : '';
   return {prompt: `${prefix}${attachments}[USER REQUEST]\n${request}`, changeIds: changes.map(c => c.id), assetIds};
 }
 
 /** Core instructions travel with a new session; asset inventory and heavy transcripts do not. */
-function sessionContext(project: Project) {
+function sessionContext(project: Project, root?: string) {
   const b = project.brief;
+  const brand = brandBlock(root);
   return `FramePilot — projeto local de edição Remotion.
-Nome: ${b.name}; objetivo: ${b.briefing}; visual: ${b.style}; observações: ${b.notes}.
+${brand ? `[MARCA]\n${brand}\n\n` : ''}Nome: ${b.name}; objetivo: ${b.briefing}; visual: ${b.style}; observações: ${b.notes}.
 Formato: ${b.width}x${b.height}, ${b.fps} FPS, ${b.duration}s.
 Edite remotion/src diretamente. Use a composição Main e remotion/src/project-settings.json.
 Use Video/Audio de @remotion/media e premountFor={fps} em Sequences com mídia. Evite frames pretos e duplicar áudio.
@@ -250,7 +265,7 @@ export function assetContext(project: Project, ids: string[]) {
 let writes: Promise<void> = Promise.resolve();
 export function persist(root: string, project: Project) {
   const json = JSON.stringify(project, null, 2);
-  const md = context(project);
+  const md = context(project, root);
   writes = writes.catch(() => {}).then(async () => {
     await fs.writeFile(path.join(root, 'project.json.tmp'), json);
     await fs.rename(path.join(root, 'project.json.tmp'), path.join(root, 'project.json'));
@@ -261,7 +276,7 @@ export function persist(root: string, project: Project) {
 export async function writeSettings(root: string, brief: Brief) {
   await fs.writeFile(path.join(root, 'remotion/src/project-settings.json'), JSON.stringify(brief, null, 2));
 }
-export async function createProject(root: string, input: Brief): Promise<Project> {
+export async function createProject(root: string, input: Brief, brandId?: string): Promise<Project> {
   const brief = validateBrief(input);
   await fs.mkdir(root, {recursive: true});
   if ((await fs.readdir(root)).length) throw new Error('Escolha uma pasta vazia para o novo projeto.');
@@ -269,7 +284,9 @@ export async function createProject(root: string, input: Brief): Promise<Project
     await fs.mkdir(path.join(root, dir), {recursive: true});
   }
   const project: Project = {version: 1, id: randomUUID(), brief, assets: [], changes: [],
-    session: {initialSent: false}, messages: [], pendingAssetIds: [], essentialAssetIds: []};
+    session: {initialSent: false}, messages: [], pendingAssetIds: [], essentialAssetIds: [],
+    // A marca é a pasta-mãe: se o projeto não foi criado dentro dela, não há vínculo a registrar.
+    ...(brandId && path.basename(path.dirname(root)) === brandId ? {brand: {id: brandId}} : {})};
   await fs.writeFile(path.join(root, 'remotion/package.json'), JSON.stringify({
     name: 'framepilot-video', private: true, version: '1.0.0',
     scripts: {studio: 'remotion studio src/index.ts', render: 'remotion render src/index.ts Main'},
@@ -289,7 +306,27 @@ export const Root = () => <Composition id="Main" component={Video}
   width={settings.width} height={settings.height} fps={settings.fps}
   durationInFrames={Math.max(1, Math.round(settings.duration * settings.fps))} />;
 `);
-  await fs.writeFile(path.join(root, 'remotion/src/Video.tsx'), `import React from 'react';
+  // Projeto de marca já nasce usando os tokens e brand:logo, que é o contrato que a IA deve seguir.
+  await fs.writeFile(path.join(root, 'remotion/src/Video.tsx'), project.brand ? `import React from 'react';
+import {AbsoluteFill, Img, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
+import settings from './project-settings.json';
+import {useBrand} from './brand';
+export const Video = () => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const {colors, fonts, defaults, tryAsset} = useBrand();
+  const opacity = interpolate(frame, [0, fps / 2], [0, 1], {extrapolateRight: 'clamp'});
+  const logo = tryAsset('brand:logo');
+  const safe = defaults.safeArea ?? {top: 0, right: 0, bottom: 0, left: 0};
+  return <AbsoluteFill style={{backgroundColor: colors.background, color: colors.text, justifyContent: 'center',
+    alignItems: 'center', fontFamily: fonts.heading?.family ?? 'sans-serif', textAlign: 'center',
+    paddingTop: safe.top, paddingRight: safe.right, paddingBottom: safe.bottom, paddingLeft: safe.left}}>
+    {logo && <Img src={logo} style={{opacity, width: '40%', marginBottom: 48}} />}
+    <div style={{opacity, fontSize: 72, fontWeight: 700, color: colors.primary}}>{settings.name}</div>
+    <div style={{opacity, fontSize: 28, marginTop: 24, color: colors.secondary}}>Seu vídeo começa aqui.</div>
+  </AbsoluteFill>;
+};
+` : `import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import settings from './project-settings.json';
 export const Video = () => {
@@ -305,14 +342,32 @@ export const Video = () => {
 `);
   await ensureProjectSkills(root);
   await writeSettings(root, brief);
+  await refreshBrand(root, project);
   await persist(root, project);
   return project;
+}
+/** Espelha o kit no projeto, regenera brand.tsx/brand-kit.json e guarda o bloco de contexto da marca. */
+export async function refreshBrand(root: string, project: Project): Promise<void> {
+  if (!project.brand) {
+    setBrandBlock(root, '');
+    await syncProjectBrand(root, project).catch(() => null);
+    return;
+  }
+  // Uma marca ilegível não pode impedir a abertura do projeto: ele segue como avulso nesta sessão.
+  try {
+    const kit = await syncProjectBrand(root, project);
+    const live = await projectKit(root, project);
+    if (kit && live) setBrandBlock(root, brandContext(kit, live.guide, project.brand.lock, project.brand.overrides));
+    else setBrandBlock(root, '');
+  } catch {setBrandBlock(root, '');}
 }
 export async function openProject(root: string): Promise<Project> {
   const p: Project = JSON.parse(await fs.readFile(path.join(root, 'project.json'), 'utf8'));
   if (p.version !== 1 || typeof p.id !== 'string' || !Array.isArray(p.assets) || !Array.isArray(p.changes)
     || !Array.isArray(p.messages) || typeof p.session?.initialSent !== 'boolean') throw new Error('Projeto FramePilot inválido.');
   p.brief = validateBrief(p.brief);
+  // O vínculo com a marca é o caminho no disco: um projeto movido à mão para fora dela volta a ser avulso.
+  if (p.brand && (typeof p.brand.id !== 'string' || !kitDirOf(root, p))) p.brand = undefined;
   const migrated = !Array.isArray(p.pendingAssetIds) || !Array.isArray(p.essentialAssetIds);
   if (!Array.isArray(p.pendingAssetIds)) {
     p.pendingAssetIds = p.session.initialSent ? p.assets.filter(a => p.changes.some(c => c.relevant && c.text.startsWith('Novo ') && c.text.includes(a.path))).map(a => a.id)
@@ -330,6 +385,7 @@ export async function openProject(root: string): Promise<Project> {
   await fs.access(path.join(root, 'remotion/src/index.ts'));
   await ensureProjectSkills(root);
   await ensureMediaPlayback(root, p);
+  await refreshBrand(root, p);
   if (recoveredSend || migrated) await persist(root, p);
   return p;
 }
@@ -365,29 +421,68 @@ export async function importAsset(root: string, project: Project, source: string
   await persist(root, project);
 }
 
-// Projects live as direct children of the library folder (Videos/FramePilot by default).
-export async function projectFolder(library: string, name: string) {
-  const slug = name.normalize('NFC').replace(/[<>:"/\|?*\x00-\x1F]/g, '').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '').slice(0, 80) || 'Projeto';
-  await fs.mkdir(library, {recursive: true});
+export const projectSlug = (name: string) =>
+  name.normalize('NFC').replace(/[<>:"/\\|?*\x00-\x1F]/g, '').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '').slice(0, 80) || 'Projeto';
+/**
+ * Projetos avulsos ficam na raiz da biblioteca (Videos/FramePilot), como sempre;
+ * projetos de marca ficam um nível abaixo, dentro da pasta da marca.
+ */
+export async function projectFolder(library: string, name: string, brandId?: string) {
+  const parent = brandId ? path.join(library, brandId) : library;
+  const slug = projectSlug(name);
+  await fs.mkdir(parent, {recursive: true});
   for (let i = 1; ; i++) {
-    const candidate = path.join(library, i === 1 ? slug : `${slug} (${i})`);
+    const candidate = path.join(parent, i === 1 ? slug : `${slug} (${i})`);
     try {await fs.access(candidate);} catch {return candidate;}
   }
 }
+async function readSummary(root: string, brandId?: string): Promise<ProjectSummary | null> {
+  try {
+    const file = path.join(root, 'project.json');
+    const [raw, stat] = await Promise.all([fs.readFile(file, 'utf8'), fs.stat(file)]);
+    const p: Project = JSON.parse(raw);
+    if (p.version !== 1 || !p.brief?.name) return null;
+    return {root, name: p.brief.name, width: p.brief.width, height: p.brief.height, duration: p.brief.duration,
+      messages: Array.isArray(p.messages) ? p.messages.filter(m => m.role !== 'system').length : 0,
+      hasSession: Boolean(p.session?.id), updatedAt: stat.mtime.toISOString(),
+      // A pasta manda: um projeto dentro de uma marca pertence a ela mesmo que o project.json ainda não saiba.
+      ...(brandId ? {brandId} : {}), ...(brandId && p.brand?.lock ? {brandLock: p.brand.lock.version} : {})};
+  } catch {return null;}
+}
+/**
+ * Move um projeto existente para a pasta de uma marca, ou de volta para "Avulsos".
+ * É sempre uma ação explícita do usuário: nada no disco se move sozinho.
+ */
+export async function moveProject(library: string, root: string, brandId: string): Promise<string> {
+  const parent = brandId ? path.join(library, brandId) : library;
+  if (path.resolve(path.dirname(root)) === path.resolve(parent)) return root;
+  if (brandId) await fs.access(path.join(parent, 'brand/brand.json'));
+  const target = await projectFolder(library, path.basename(root), brandId || undefined);
+  await fs.rename(root, target);
+  setBrandBlock(root, '');
+  const p: Project = JSON.parse(await fs.readFile(path.join(target, 'project.json'), 'utf8'));
+  // Overrides acompanham o projeto; o lock não, porque o snapshot era de outra marca.
+  p.brand = brandId ? {id: brandId, ...(p.brand?.overrides ? {overrides: p.brand.overrides} : {})} : undefined;
+  await fs.rm(path.join(target, SNAPSHOT_DIR), {recursive: true, force: true});
+  await refreshBrand(target, p);
+  await persist(target, p);
+  return target;
+}
+/** Varre dois níveis: projetos avulsos na raiz e projetos dentro de cada pasta de marca. */
 export async function listProjects(library: string): Promise<ProjectSummary[]> {
   let entries: import('node:fs').Dirent[];
   try {entries = await fs.readdir(library, {withFileTypes: true});} catch {return [];}
-  const found = await Promise.all(entries.filter(e => e.isDirectory()).map(async (e): Promise<ProjectSummary | null> => {
+  const folders = entries.filter(e => e.isDirectory());
+  const found = await Promise.all(folders.map(async (e): Promise<(ProjectSummary | null)[]> => {
     const root = path.join(library, e.name);
-    try {
-      const file = path.join(root, 'project.json');
-      const [raw, stat] = await Promise.all([fs.readFile(file, 'utf8'), fs.stat(file)]);
-      const p: Project = JSON.parse(raw);
-      if (p.version !== 1 || !p.brief?.name) return null;
-      return {root, name: p.brief.name, width: p.brief.width, height: p.brief.height, duration: p.brief.duration,
-        messages: Array.isArray(p.messages) ? p.messages.filter(m => m.role !== 'system').length : 0,
-        hasSession: Boolean(p.session?.id), updatedAt: stat.mtime.toISOString()};
-    } catch {return null;}
+    const own = await readSummary(root);
+    if (own) return [own];
+    // Não é projeto: pode ser uma marca. Só então vale varrer o nível de baixo.
+    const isBrand = await fs.access(path.join(root, 'brand/brand.json')).then(() => true, () => false);
+    if (!isBrand) return [];
+    const children = await fs.readdir(root, {withFileTypes: true}).catch(() => []);
+    return Promise.all(children.filter(c => c.isDirectory() && c.name !== 'brand')
+      .map(c => readSummary(path.join(root, c.name), e.name)));
   }));
-  return found.filter((s): s is ProjectSummary => s !== null).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return found.flat().filter((s): s is ProjectSummary => s !== null).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }

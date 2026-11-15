@@ -6,11 +6,19 @@ import type {AgentEngine, AppEvent, Project, Settings} from '../shared/types';
 import {persist, promptFor} from './project';
 import {claudeExecutable, environment, jsonLines, opencodeExecutable, Processes, type Job} from './processes';
 import type {Bridge} from './terminal';
+import {ELEVENLABS, elevenlabsClaudeServer, elevenlabsOpencodeServer} from './providers';
 
 export const FRAME_TOOL = 'mcp__framepilot__extract_frames';
 export const TERMINAL_TOOLS = ['run_command', 'command_status', 'stop_command', 'list_commands'].map(name => `mcp__framepilot__${name}`);
 const terminalReminder = (tool: string) => `Para executar comandos reais (python, ffmpeg/ffprobe, git, npm, scripts) use ${tool}; `
   + 'o diretório padrão é a raiz do projeto. Comandos destrutivos ou fora do projeto pedem confirmação do usuário: se ele negar, não contorne.';
+const elevenlabsReminder = (prefix: string) => `ElevenLabs está conectada (ferramentas ${prefix}*): use-a quando o pedido precisar de narração, locução, vozes ou efeitos sonoros gerados. `
+  + 'Escreva o texto da narração primeiro, escolha uma voz adequada ao briefing e ao idioma, salve cada áudio em remotion/public/audio/ com nome descritivo '
+  + '(se a ferramenta devolver só um link, baixe pelo terminal do FramePilot) e posicione-o na timeline. Cada geração consome créditos da conta da pessoa: '
+  + 'não gere variações sem necessidade e não use ferramentas de agentes, anúncios ou clonagem de voz sem pedido explícito.';
+const AUTO_TOOLS = ',Bash,WebFetch,WebSearch,TodoWrite';
+const autoReminder = 'Modo Auto ativo: a pessoa liberou você para trabalhar sem pedir permissão (terminal, internet, pacotes do projeto, downloads). '
+  + 'Resolva o pedido de ponta a ponta sem parar para confirmar. Mesmo assim, não apague os arquivos originais da pessoa nem mexa fora do projeto sem necessidade.';
 const SESSION_ID: Record<AgentEngine, RegExp> = {claude: /^[a-f0-9-]{36}$/i, opencode: /^ses_[A-Za-z0-9]{8,64}$/};
 const NAMES: Record<AgentEngine, string> = {claude: 'Claude', opencode: 'OpenCode'};
 
@@ -19,22 +27,28 @@ function mcpServer(root: string, bridge?: Bridge) {
   return {command: process.execPath, args: [path.join(__dirname, 'frame-tool.js'), root],
     env: {ELECTRON_RUN_AS_NODE: '1', ...(bridge ? {FRAMEPILOT_BRIDGE: bridge.path, FRAMEPILOT_TOKEN: bridge.token} : {})}};
 }
-async function frameToolConfig(root: string, bridge?: Bridge) {
+async function frameToolConfig(root: string, bridge?: Bridge, elevenlabs = false) {
   const file = path.join(root, '.claude', 'framepilot-mcp.json');
   await fs.mkdir(path.dirname(file), {recursive: true});
-  await fs.writeFile(file, JSON.stringify({mcpServers: {framepilot: {type: 'stdio', ...mcpServer(root, bridge)}}}, null, 2));
+  await fs.writeFile(file, JSON.stringify({mcpServers: {framepilot: {type: 'stdio', ...mcpServer(root, bridge)},
+    // Same name, type and URL as the user-scope server, so Claude Code reuses the OAuth token from `claude mcp login`.
+    ...(elevenlabs ? {[ELEVENLABS.name]: elevenlabsClaudeServer()} : {})}}, null, 2));
   return file;
 }
 /** OpenCode config passed through OPENCODE_CONFIG, so the user's project root stays clean. Shell access goes
  *  through FramePilot's run_command (reviewed and confirmed), mirroring the tool set given to Claude Code. */
-async function opencodeConfig(root: string, bridge?: Bridge) {
+async function opencodeConfig(root: string, bridge?: Bridge, elevenlabs = false, auto = false) {
   const file = path.join(root, '.framepilot', 'opencode.json');
   const server = mcpServer(root, bridge);
   await fs.mkdir(path.dirname(file), {recursive: true});
   await fs.writeFile(file, JSON.stringify({$schema: 'https://opencode.ai/config.json',
     instructions: [path.join(root, 'CLAUDE.md')],
-    mcp: {framepilot: {type: 'local', command: [server.command, ...server.args], environment: server.env, enabled: true}},
-    permission: {bash: 'deny', webfetch: 'deny', websearch: 'deny', external_directory: 'deny', question: 'deny', edit: 'allow', read: 'allow'}}, null, 2));
+    mcp: {framepilot: {type: 'local', command: [server.command, ...server.args], environment: server.env, enabled: true},
+      ...(elevenlabs ? {[ELEVENLABS.name]: elevenlabsOpencodeServer()} : {})},
+    // Modo Auto opens shell, web and outside-project access; questions stay off because nobody can answer them headless.
+    permission: auto
+      ? {bash: 'allow', webfetch: 'allow', websearch: 'allow', external_directory: 'allow', question: 'deny', edit: 'allow', read: 'allow'}
+      : {bash: 'deny', webfetch: 'deny', websearch: 'deny', external_directory: 'deny', question: 'deny', edit: 'allow', read: 'allow'}}, null, 2));
   return file;
 }
 
@@ -61,22 +75,27 @@ export class Claude {
     }
     const {prompt, changeIds, assetIds} = promptFor(project, request.trim());
     const bridge = this.bridge();
-    const reminder = bridge ? `${skillReminder}\n${terminalReminder(engine === 'claude' ? 'mcp__framepilot__run_command' : 'framepilot_run_command')}` : skillReminder;
+    const voice = settings.elevenlabs === true;
+    const auto = settings.autoMode === true;
+    const reminder = [skillReminder, bridge && terminalReminder(engine === 'claude' ? 'mcp__framepilot__run_command' : 'framepilot_run_command'),
+      voice && elevenlabsReminder(engine === 'claude' ? `mcp__${ELEVENLABS.name}__` : `${ELEVENLABS.name}_`),
+      settings.autoMode === true && autoReminder].filter(Boolean).join('\n');
     let command: string, args: string[], input = prompt, env = environment();
     if (engine === 'claude') {
       command = claudeExecutable(settings.claudePath);
       args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-        '--permission-mode', 'acceptEdits', '--tools', 'Read,Write,Edit,Glob,Grep,Skill',
-        '--allowedTools', [`Read,Write,Edit,Glob,Grep,Skill,${FRAME_TOOL}`, ...(bridge ? TERMINAL_TOOLS : [])].join(','),
+        // Modo Auto: Claude Code's auto mode (a safety classifier instead of prompts) with shell and web tools.
+        '--permission-mode', auto ? 'auto' : 'acceptEdits', '--tools', `Read,Write,Edit,Glob,Grep,Skill${auto ? AUTO_TOOLS : ''}`,
+        '--allowedTools', [`Read,Write,Edit,Glob,Grep,Skill${auto ? AUTO_TOOLS : ''},${FRAME_TOOL}`, ...(bridge ? TERMINAL_TOOLS : []), ...(voice ? [`mcp__${ELEVENLABS.name}`] : [])].join(','),
         '--append-system-prompt', reminder,
-        '--mcp-config', await frameToolConfig(root, bridge), '--strict-mcp-config'];
+        '--mcp-config', await frameToolConfig(root, bridge, voice), '--strict-mcp-config'];
       if (settings.model) args.push('--model', settings.model);
       if (settings.effort) args.push('--effort', settings.effort);
     } else {
       command = opencodeExecutable(settings.opencodePath);
-      // --auto approves only what the config does not deny (bash, web and outside-project access are denied).
+      // --auto approves only what the config does not deny (bash, web and outside-project access are denied unless Modo Auto is on).
       args = ['run', '--format', 'json', '--auto', '--model', settings.opencodeModel];
-      env = {...env, OPENCODE_CONFIG: await opencodeConfig(root, bridge)};
+      env = {...env, OPENCODE_CONFIG: await opencodeConfig(root, bridge, voice, auto)};
       // OpenCode has no appended system prompt; the reminder travels with the request.
       input = `[FRAMEPILOT]\n${reminder}\n\n${prompt}`;
     }
