@@ -13,6 +13,7 @@ export default defineConfig({
       const destination = path.join(__dirname, 'out/main/claude-resources');
       await mkdir(destination, {recursive: true});
       await cp(path.join(__dirname, '.claude/skills'), path.join(destination, '.claude/skills'), {recursive: true});
+      await cp(path.join(__dirname, '.claude/video-skills'), path.join(destination, '.claude/video-skills'), {recursive: true});
       await cp(path.join(__dirname, 'CLAUDE.md'), path.join(destination, 'CLAUDE.md'));
     }
   }]},

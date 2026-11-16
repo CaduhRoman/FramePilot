@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Edit review</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#0e0e10;--panel:#17171a;--card:#1f1f23;--line:#2c2c31;--ink:#f1f1f3;--mute:#9a9aa3;--acc:#ffd23f;--ok:#3ecf8e;--warn:#ff9f43;--qa:#7aa2ff}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,system-ui,sans-serif;display:grid;grid-template-columns:250px 1fr;grid-template-rows:auto 1fr;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+header{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line)}
+header h1{font-size:16px;margin:0 10px 0 0}
+.filters{display:flex;gap:6px}
+.filters button,.pill{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:13px}
+.filters button.on,.pill.on{background:var(--ink);color:#111;border-color:var(--ink);font-weight:600}
+.filters b{font-weight:600;opacity:.7;margin-left:4px}
+#tx{margin-left:auto;color:var(--mute);font-size:12px}
+aside{border-right:1px solid var(--line);overflow:auto;padding:8px}
+.ad{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:9px;cursor:pointer}
+.ad:hover{background:var(--panel)}.ad.on{background:var(--card)}
+.ad .t{flex:1;min-width:0}.ad .t div:first-child{font-weight:600}.ad .t div:last-child{color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--mute)}
+.dot.notes{background:var(--warn)}.dot.approved{background:var(--ok)}.dot.review{background:var(--acc)}
+.badge{background:var(--warn);color:#111;border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px}
+main{display:grid;grid-template-columns:1fr 360px;overflow:hidden}
+.stage{display:flex;flex-direction:column;min-width:0;padding:12px 16px;overflow:hidden}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px}
+.bar .lbl{color:var(--mute);font-size:12px;margin-right:2px}
+.hook{display:inline-flex;align-items:center;gap:6px}
+.spacer{flex:1}
+.btn{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 11px;font-size:13px}
+.btn.ok{background:var(--ok);color:#06210f;border-color:var(--ok);font-weight:600}
+.btn:disabled{opacity:.4;cursor:default}
+.players{flex:1;display:flex;gap:14px;min-height:0;justify-content:center;overflow:hidden}
+.pl{display:flex;flex-direction:column;align-items:center;min-height:0;min-width:0;flex:0 1 auto}
+.pl video{height:calc(100vh - 250px);max-width:100%;aspect-ratio:9/16;object-fit:contain;background:#000;border-radius:10px}
+.pl select{max-width:100%}
+.pl .cap{color:var(--mute);font-size:12px;margin-top:4px}
+.pl select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;margin-bottom:6px;padding:3px}
+.words{margin-top:8px;min-height:44px;max-width:640px;text-align:center;font-size:15px;color:var(--mute);align-self:center}
+.words span{cursor:pointer;padding:0 1px;border-radius:3px}.words span.on{color:#111;background:var(--acc)}
+.time{font-variant-numeric:tabular-nums;color:var(--mute);font-size:12px;text-align:center}
+.job{background:#16202f;border:1px solid #2c4366;color:#cfe0ff;border-radius:8px;padding:7px 10px;margin-bottom:8px;font-size:13px;display:none;align-items:center;gap:10px}
+.job .msg{flex:1;min-width:0}.job .last{color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job.done{background:#14231b;border-color:#2c5a40;color:#bfe9d2}.job.failed{background:#2a1515;border-color:#5a2c2c;color:#ffc9c9}
+.spin{width:12px;height:12px;border:2px solid #6c8cc0;border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;flex:none}@keyframes sp{to{transform:rotate(360deg)}}
+.btn.ai{background:#2c4366;border-color:#3d5c8c;color:#e6efff;font-weight:600}
+.banner{background:#2b2410;border:1px solid #5a4a12;color:var(--acc);border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:13px;display:none}
+.banner button{margin-left:8px}
+.notes{border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.compose{padding:12px;border-bottom:1px solid var(--line)}
+.compose label{display:block;color:var(--mute);font-size:12px;margin-bottom:4px}
+.compose textarea{width:100%;min-height:64px;resize:vertical;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}
+.compose .hint{color:var(--mute);font-size:11px;margin-top:4px}
+.nhead{display:flex;align-items:center;padding:8px 12px;color:var(--mute);font-size:12px}
+.nhead label{margin-left:auto;cursor:pointer}
+.list{overflow:auto;padding:0 12px 16px;flex:1}
+.note{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:8px}
+.note.done{opacity:.5}.note.qa{border-left:3px solid var(--qa)}
+.note .top{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mute)}
+.chip{background:#2c2c33;border:0;border-radius:6px;padding:1px 7px;font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.note .q{font-style:italic;color:var(--mute);font-size:12px;margin:5px 0 2px}
+.note .x{white-space:pre-wrap}
+.note .reply{margin-top:6px;padding:6px 8px;background:#14231b;border-radius:7px;font-size:13px;color:#bfe9d2}
+.note .acts{display:flex;gap:6px;margin-top:6px}
+.note .acts button{background:none;border:1px solid var(--line);border-radius:6px;padding:1px 8px;font-size:12px;color:var(--mute)}
+.empty{color:var(--mute);padding:40px;text-align:center}
+kbd{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+</style></head>
+<body>
+<header>
+  <h1>Edit review</h1>
+  <div class="filters" id="filters"></div>
+  <div id="tx"></div>
+</header>
+<aside id="ads"></aside>
+<main>
+  <section class="stage">
+    <div class="job" id="job"></div>
+    <div class="banner" id="banner"></div>
+    <div class="bar" id="hooks"></div>
+    <div class="bar" id="versions"></div>
+    <div class="players" id="players">
+      <div class="pl"><video id="v" controls playsinline preload="auto"></video><div class="time" id="time"></div></div>
+      <div class="pl" id="cmpWrap" style="display:none"><select id="cmpSel"></select><video id="v2" playsinline preload="auto" muted></video><div class="cap">compare (muted, follows the main player)</div></div>
+    </div>
+    <div class="words" id="words"></div>
+  </section>
+  <section class="notes">
+    <div class="compose">
+      <label id="atLbl">Note at 0:00.0</label>
+      <textarea id="nt" placeholder="What should change here?"></textarea>
+      <div class="hint"><kbd>N</kbd> new note (pauses) · <kbd>Enter</kbd> save · <kbd>Shift+Enter</kbd> new line · <kbd>Esc</kbd> back to video</div>
+    </div>
+    <div class="nhead"><span id="ncount"></span><label><input type="checkbox" id="showDone"> show done</label></div>
+    <div class="list" id="list"></div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const S={state:null,filter:'review',code:null,proj:null,hook:null,file:null,cmp:false,noteT:0,lastMtime:{}};
+const FILTERS=[['review','To review'],['notes','Notes open'],['approved','Approved'],['all','All']];
+const fmt=t=>{t=Math.max(0,t||0);const m=Math.floor(t/60),s=(t%60).toFixed(1).padStart(4,'0');return m+':'+s};
+const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});if(!r.ok)throw new Error(path+' '+r.status);return r.json();}
+
+/* ---------- sidebar ---------- */
+function renderFilters(){
+  const ps=S.state.projects;
+  $('filters').innerHTML=FILTERS.map(([k,l])=>{const n=k=='all'?ps.length:ps.filter(p=>p.status==k).length;return `<button data-f="${k}" class="${S.filter==k?'on':''}">${l}<b>${n}</b></button>`}).join('');
+  $('filters').querySelectorAll('button').forEach(b=>b.onclick=()=>{S.filter=b.dataset.f;renderFilters();renderAds();});
+}
+function renderAds(){
+  const ps=S.state.projects.filter(p=>S.filter=='all'||p.status==S.filter||p.code==S.code);
+  $('ads').innerHTML=ps.length?ps.map(p=>{const hk=Object.keys(p.hooks);return `<div class="ad ${p.code==S.code?'on':''}" data-c="${p.code}"><span class="dot ${p.status}"></span><div class="t"><div>${esc(p.code)}</div><div>${hk.length} cut${hk.length>1?'s':''}</div></div>${(S.state.jobs||{})[p.code]&&S.state.jobs[p.code].status=='running'?'<span class="spin" title="Claude is applying notes"></span>':''}${p.open?`<span class="badge">${p.open}</span>`:''}</div>`}).join(''):'<div class="empty">Nothing here.</div>';
+  $('ads').querySelectorAll('.ad').forEach(a=>a.onclick=()=>openAd(a.dataset.c));
+}
+async function poll(){
+  try{
+    S.state=await api('/api/state');
+    $('tx').textContent=S.state.transcribing?('Transcribing '+S.state.transcribing.split('/').pop()+'…'):'';
+    renderFilters();renderAds();renderJob();
+    if(S.code){const p=S.state.projects.find(x=>x.code==S.code);if(p&&p.mtime!==S.lastMtime[S.code]){S.lastMtime[S.code]=p.mtime;await loadProj(false);}}
+  }catch(e){$('tx').textContent='Server not reachable';}
+}
+
+/* ---------- ad view ---------- */
+async function openAd(code){
+  S.code=code;location.hash=code;S.hook=null;S.file=null;
+  const p=S.state.projects.find(x=>x.code==code);S.lastMtime[code]=p&&p.mtime;
+  await loadProj(true);renderAds();
+}
+async function loadProj(reset){
+  const prev=S.proj;S.proj=await api('/api/project?code='+encodeURIComponent(S.code));
+  const hooks=S.proj.hooks;const names=Object.keys(hooks).sort();
+  if(!S.hook||!hooks[S.hook]){S.hook=names.find(h=>hooks[h].status!='approved')||names[0];reset=true;}
+  const vs=hooks[S.hook].versions.map(v=>v.file);
+  if(reset||!S.file||!vs.includes(S.file)){setFile(hooks[S.hook].latest);}
+  else if(prev&&prev.hooks[S.hook]&&prev.hooks[S.hook].latest!==hooks[S.hook].latest&&S.file!==hooks[S.hook].latest){
+    const nv=hooks[S.hook].versions.find(v=>v.file==hooks[S.hook].latest);
+    $('banner').style.display='block';$('banner').innerHTML=`v${nv.version} of hook ${S.hook} is ready.<button class="btn" id="goNew">Open it</button>`;
+    $('goNew').onclick=()=>{$('banner').style.display='none';setFile(hooks[S.hook].latest);renderAll();};
+  }
+  renderAll();
+}
+function curVer(){return S.proj.hooks[S.hook].versions.find(v=>v.file==S.file);}
+function setFile(f,t){
+  S.file=f;const v=$('v');const src=S.proj.hooks[S.hook].versions.find(x=>x.file==f).src;
+  if(!v.src.endsWith(src)){v.src=src;v.load();}
+  if(t!=null){const go=()=>{v.currentTime=t;};v.readyState>0?go():v.addEventListener('loadedmetadata',go,{once:true});}
+  syncCmpOptions();
+}
+function renderAll(){renderHooks();renderVersions();renderNotes();renderWords();renderJob();}
+function renderHooks(){
+  const hs=S.proj.hooks;
+  $('hooks').innerHTML=`<span class="lbl">${esc(S.proj.code)} · cut</span>`+Object.keys(hs).sort().map((h,i)=>`<button class="pill hook ${h==S.hook?'on':''}" data-h="${h}" title="key ${i+1}"><span class="dot ${hs[h].status}"></span>${h=='Main'?'Main':'Hook '+h}${hs[h].open?` <span class="badge">${hs[h].open}</span>`:''}</button>`).join('');
+  if(Object.keys(hs).length==1&&!aApproved())$('hooks').insertAdjacentHTML('beforeend','<span class="lbl" style="margin-left:6px">Nail this one first: the other variations are built once it\'s approved.</span>');
+  $('hooks').querySelectorAll('button').forEach(b=>b.onclick=()=>pickHook(b.dataset.h));
+}
+function pickHook(h){if(!S.proj.hooks[h])return;S.hook=h;$('banner').style.display='none';setFile(S.proj.hooks[h].latest);renderAll();}
+function renderVersions(){
+  const H=S.proj.hooks[S.hook];const cv=curVer();const appr=!!S.proj.approvals[S.file];const latest=S.file==H.latest;
+  $('versions').innerHTML=`<span class="lbl">version</span>`+H.versions.map(v=>`<button class="pill ${v.file==S.file?'on':''}" data-f="${esc(v.file)}" title="${esc(v.name)}">v${v.version}${S.proj.approvals[v.file]?' ✓':''}</button>`).join('')+
+   `<span class="spacer"></span>${applyBtn()}<button class="btn" id="cmpBtn">${S.cmp?'Close compare':'Compare'}</button>`+
+   `<button class="btn ${appr?'':'ok'}" id="apBtn" ${latest||appr?'':'disabled title="Approve the latest version"'}>${appr?'Unapprove v'+cv.version:'Approve v'+cv.version}</button>`;
+  $('versions').querySelectorAll('.pill').forEach(b=>b.onclick=()=>{setFile(b.dataset.f,$('v').currentTime);renderAll();});
+  if($('applyBtn'))$('applyBtn').onclick=applyNotes;
+  if($('varBtn'))$('varBtn').onclick=()=>{if(confirm('Build the other variations (B, C, D) from the approved cut? Claude works in the background.'))startJob('variations');};
+  $('cmpBtn').onclick=()=>{S.cmp=!S.cmp;$('cmpWrap').style.display=S.cmp?'flex':'none';syncCmpOptions();renderVersions();};
+  $('apBtn').onclick=async()=>{S.proj=await api('/api/approve',{code:S.code,file:S.file,value:!appr});S.lastMtime[S.code]=null;await poll();renderAll();};
+}
+function syncCmpOptions(){
+  if(!S.cmp||!S.proj)return;const sel=$('cmpSel');const opts=[];
+  Object.keys(S.proj.hooks).sort().forEach(h=>S.proj.hooks[h].versions.forEach(v=>{if(v.file!=S.file)opts.push([v.file,(h=='Main'?'Main':'Hook '+h)+' v'+v.version,v.src]);}));
+  const keep=sel.value;sel.innerHTML=opts.map(o=>`<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
+  if(opts.find(o=>o[0]==keep))sel.value=keep;else{const same=opts.find(o=>o[0].includes('Hook'+S.hook)||o[0].includes('_'+S.hook+'_'));if(same)sel.value=same[0];}
+  const o=opts.find(x=>x[0]==sel.value);const v2=$('v2');if(o&&!v2.src.endsWith(o[2])){v2.src=o[2];v2.load();v2.currentTime=$('v').currentTime;}
+}
+$('cmpSel').onchange=()=>{S.cmp=true;syncCmpOptions();};
+
+/* ---------- Apply notes: Claude runs /apply-notes in the background ---------- */
+function job(){return S.code&&S.state&&S.state.jobs?S.state.jobs[S.code]:null;}
+function openCount(){return S.proj?S.proj.notes.filter(n=>n.status=='open').length:0;}
+function firstHook(){return S.proj?Object.keys(S.proj.hooks).sort()[0]:null;}
+function onlyA(){return S.proj&&Object.keys(S.proj.hooks).length==1;}
+function aApproved(){const h=firstHook();return !!h&&S.proj.hooks[h].status=='approved';}
+function applyBtn(){const j=job(),n=openCount(),run=j&&j.status=='running';
+  if(onlyA()&&aApproved()&&!n)return `<button class="btn ai" id="varBtn" ${run?'disabled':''} title="Build hooks B, C, D from the approved cut">${run?'Building…':'Build variations'}</button>`;
+  return `<button class="btn ai" id="applyBtn" ${(!n||run)?'disabled':''} title="Claude applies every open note on this ad, renders the next version and replies on each note">${run?'Applying…':'Apply notes'+(n?' ('+n+')':'')}</button>`;}
+async function applyNotes(){
+  const n=openCount();if(!n)return;
+  if(!confirm(`Send ${n} open note${n>1?'s':''} on ${S.code} to Claude? It works in the background and renders the next version here.`))return;
+  await startJob('notes');
+}
+async function startJob(mode){
+  const r=await fetch('/api/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:S.code,mode})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok||d.error){alert(d.error||('Could not start: '+r.status));return;}
+  await poll();renderVersions();
+}
+const dur=s=>{s=Math.max(0,Math.round(s));return (s>=60?Math.floor(s/60)+'m ':'')+(s%60)+'s';};
+function renderJob(){
+  const el=$('job');const j=job();
+  if(!j){el.style.display='none';return;}
+  el.style.display='flex';el.className='job '+(j.status=='done'?'done':(j.status=='running'?'':'failed'));
+  const t=dur((j.finished||Date.now()/1000)-j.started);
+  if(j.status=='running'){
+    el.innerHTML=`<span class="spin"></span><div class="msg"><div>${j.mode=='variations'?'Claude is building the variations for':'Claude is applying notes on'} ${esc(S.code)} · ${t}</div><div class="last">${esc(j.last||'')}</div></div><button class="btn" id="jobStop">Stop</button>`;
+    $('jobStop').onclick=async()=>{if(confirm('Stop Claude? Anything already rendered stays.')){await api('/api/apply/stop',{code:S.code});poll();}};
+  }else{
+    const head=j.status=='done'?`Claude finished in ${t}.`:(j.status=='stopped'?'Stopped.':'Claude hit a problem.');
+    const body=j.status=='done'?(j.result||''):(j.error||'');
+    el.innerHTML=`<div class="msg"><div>${head}</div><div class="last" style="white-space:normal">${esc(body).slice(0,600)}</div></div><button class="btn" id="jobClear">Dismiss</button>`;
+    $('jobClear').onclick=async()=>{await api('/api/apply/clear',{code:S.code});poll();};
+  }
+  const vb=$('varBtn');if(vb){vb.disabled=j.status=='running';vb.textContent=j.status=='running'?'Building…':'Build variations';}
+  const b=$('applyBtn');if(b){const run=j.status=='running';b.disabled=run||!openCount();b.textContent=run?'Applying…':'Apply notes'+(openCount()?' ('+openCount()+')':'');}
+}
+
+/* ---------- transcript under the player ---------- */
+function words(){return (S.proj&&S.proj.words&&S.proj.words[S.file])||null;}
+let lastWordKey='';
+function renderWords(){
+  const ws=words();const t=$('v').currentTime;
+  if(!ws){$('words').innerHTML='<span style="opacity:.6">Transcript not ready yet; notes still save with their timestamp.</span>';lastWordKey='';return;}
+  let i=ws.findIndex(w=>w.e>=t);if(i<0)i=ws.length-1;
+  const a=Math.max(0,i-6),b=Math.min(ws.length,i+8);const key=a+':'+b+':'+i;if(key==lastWordKey)return;lastWordKey=key;
+  $('words').innerHTML=ws.slice(a,b).map((w,k)=>`<span data-s="${w.s}" class="${a+k==i&&w.s<=t+0.05?'on':''}">${esc(w.w)}</span>`).join(' ');
+  $('words').querySelectorAll('span').forEach(s=>s.onclick=()=>{$('v').currentTime=+s.dataset.s;});
+}
+function wordsAt(t){const ws=words();if(!ws)return'';return ws.filter(w=>w.e>=t-1.2&&w.s<=t+1.6).map(w=>w.w).join(' ');}
+
+/* ---------- notes ---------- */
+function renderNotes(){
+  const all=S.proj.notes.filter(n=>n.hook==S.hook);const show=$('showDone').checked;
+  const ns=all.filter(n=>show||n.status=='open').sort((a,b)=>b.version-a.version||a.t-b.t);
+  const open=all.filter(n=>n.status=='open').length;
+  $('ncount').textContent=`${open} open · ${all.length-open} done on ${S.hook=='Main'?'this cut':'hook '+S.hook}`;
+  $('list').innerHTML=ns.length?ns.map(n=>`<div class="note ${n.status!='open'?'done':''} ${n.author=='QA'?'qa':''}">
+    <div class="top"><button class="chip" data-seek="${n.id}">v${n.version} · ${fmt(n.t)}</button><span>${esc(n.author||'')}</span><span style="margin-left:auto">${n.status}</span></div>
+    ${n.words?`<div class="q">“${esc(n.words)}”</div>`:''}<div class="x">${esc(n.text)}</div>
+    ${n.reply?`<div class="reply">${esc(n.reply)}</div>`:''}
+    <div class="acts">${n.status=='open'?`<button data-st="${n.id}:done">Mark done</button>${n.author=='QA'?`<button data-st="${n.id}:dismissed">Dismiss</button>`:''}<button data-del="${n.id}">Delete</button>`:`<button data-st="${n.id}:open">Reopen</button>`}</div></div>`).join(''):'<div class="empty">No open notes on this cut.</div>';
+  $('list').querySelectorAll('[data-seek]').forEach(b=>b.onclick=()=>{const n=S.proj.notes.find(x=>x.id==b.dataset.seek);if(n.file!=S.file){setFile(n.file,n.t);renderAll();}else $('v').currentTime=n.t;});
+  $('list').querySelectorAll('[data-st]').forEach(b=>b.onclick=async()=>{const [id,st]=b.dataset.st.split(':');S.proj=await api('/api/notes/update',{code:S.code,id,status:st});renderAll();poll();});
+  $('list').querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this note?'))return;S.proj=await api('/api/notes/delete',{code:S.code,id:b.dataset.del});renderAll();poll();});
+}
+$('showDone').onchange=renderNotes;
+const nt=$('nt');
+nt.addEventListener('focus',()=>{$('v').pause();S.noteT=$('v').currentTime;$('atLbl').textContent=`Note at ${fmt(S.noteT)} on v${curVer().version}${S.hook=='Main'?'':' · hook '+S.hook}`;});
+nt.addEventListener('keydown',async e=>{
+  if(e.key=='Escape'){nt.blur();return;}
+  if(e.key=='Enter'&&!e.shiftKey){e.preventDefault();const text=nt.value.trim();if(!text)return;
+    S.proj=await api('/api/notes/add',{code:S.code,file:S.file,t:S.noteT,text,words:wordsAt(S.noteT)});nt.value='';nt.blur();renderAll();poll();}
+});
+
+/* ---------- player events + keys ---------- */
+const v=$('v'),v2=$('v2');
+v.addEventListener('timeupdate',()=>{$('time').textContent=fmt(v.currentTime)+' / '+fmt(v.duration);if(document.activeElement!==nt)$('atLbl').textContent=`Note at ${fmt(v.currentTime)}`;renderWords();});
+v.addEventListener('play',()=>{if(S.cmp){v2.currentTime=v.currentTime;v2.play();}});
+v.addEventListener('pause',()=>{if(S.cmp)v2.pause();});
+v.addEventListener('seeked',()=>{if(S.cmp)v2.currentTime=v.currentTime;lastWordKey='';renderWords();});
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName=='TEXTAREA'||e.target.tagName=='SELECT'||!S.proj)return;
+  const k=e.key;
+  if(k==' '){e.preventDefault();v.paused?v.play():v.pause();}
+  else if(k=='n'||k=='N'){e.preventDefault();nt.focus();}
+  else if(k=='ArrowLeft'){v.currentTime-=e.shiftKey?5:1;}
+  else if(k=='ArrowRight'){v.currentTime+=e.shiftKey?5:1;}
+  else if(k==','){v.pause();v.currentTime-=1/30;}
+  else if(k=='.'){v.pause();v.currentTime+=1/30;}
+  else if(/^[1-9]$/.test(k)){const h=Object.keys(S.proj.hooks).sort()[+k-1];if(h)pickHook(h);}
+});
+
+window.addEventListener('hashchange',()=>{const c=decodeURIComponent(location.hash.slice(1));if(c&&c!==S.code&&S.state&&S.state.projects.find(x=>x.code==c))openAd(c);});
+(async()=>{await poll();const c=decodeURIComponent(location.hash.slice(1));const p=S.state.projects;
+  const first=(c&&p.find(x=>x.code==c))||p.find(x=>x.status=='review')||p[0];if(first){if(first.status!=S.filter&&!(c))S.filter=first.status;await openAd(first.code);renderFilters();renderAds();}
+  setInterval(poll,4000);})();
+</script>
+</body></html>

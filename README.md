@@ -33,6 +33,10 @@ O modo grátis tem limites de uso e funciona melhor em pedidos simples. Para edi
 
 Você pode trocar de IA quando quiser em **Configurações → Trocar IA**.
 
+### Narração com IA (opcional)
+
+Depois de escolher a IA, o FramePilot oferece conectar a **ElevenLabs**. Com ela, a IA gera locução, vozes e efeitos sonoros e já coloca o áudio no vídeo. O login abre na página oficial da ElevenLabs e as gerações usam os créditos da sua conta. Para conectar ou desativar depois, use **Configurações → Narração com IA**.
+
 ---
 
 ## Criando seu primeiro vídeo
@@ -75,6 +79,7 @@ Assista no preview, peça mudanças ("deixa a abertura mais rápida", "troca a c
 - **Nova sessão** recomeça a conversa sem perder o que já foi editado. É útil quando a IA se perde ou o projeto mudou muito.
 - **Interromper** para a IA na hora. O que ela já tinha editado continua salvo.
 - **Permissões**: se a IA precisar executar algo sensível (apagar arquivos, mexer fora do projeto), o FramePilot pergunta antes. Na dúvida, clique em **Negar**.
+- **Modo Auto**: para a IA trabalhar sem pedir permissão a cada passo (usar terminal, internet e instalar pacotes), ative em **Opções → Modo Auto**, no chat, ou em **Configurações → Modo Auto**.
 
 ---
 
