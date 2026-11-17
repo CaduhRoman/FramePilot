@@ -70,9 +70,28 @@ export class Remotion {
     await this.stopStudio();
     throw new Error('Preview não iniciou em 60 segundos. Verifique os logs e tente novamente.');
   }
+  /**
+   * Argumentos do render. A concorrência fica a cargo do Remotion por padrão (ele usa os núcleos
+   * disponíveis); forçar 1 thread deixava o export várias vezes mais lento sem necessidade.
+   */
+  renderArgs(settings: Settings): string[] {
+    const args = ['--codec', 'h264'];
+    const concurrency = settings.concurrency?.trim();
+    if (concurrency) args.push('--concurrency', concurrency);
+    if (settings.gpu) {
+      // O chrome-headless-shell padrão não expõe GPU: só o Chrome for Testing com ANGLE usa a placa.
+      args.push('--chrome-mode', 'chrome-for-testing', '--gl', 'angle');
+      // Encode por NVENC/QuickSync quando houver; cai para x264 sozinho se não houver.
+      args.push('--hardware-acceleration', 'if-possible');
+    }
+    return args;
+  }
   async render(root: string, output: string, settings: Settings) {
     const cli = await this.cli(root);
-    this.operation = this.processes.start(settings.nodePath || 'node', [cli, 'render', 'src/index.ts', 'Main', output, '--codec', 'h264', '--concurrency', '1'], path.join(root, 'remotion'));
+    const args = this.renderArgs(settings);
+    this.log(`Renderizando com: ${args.join(' ')}${settings.concurrency?.trim() ? '' : ' (concorrência automática)'}`);
+    this.operation = this.processes.start(settings.nodePath || 'node',
+      [cli, 'render', 'src/index.ts', 'Main', output, ...args], path.join(root, 'remotion'));
     this.operation.child.stdin?.end();
     try {await logJob(this.operation, this.log); await fs.access(output);} finally {this.operation = undefined;}
   }

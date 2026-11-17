@@ -426,6 +426,8 @@ function registerIPC() {
     const selected = await dialog.showSaveDialog(window, {title: 'Renderizar vídeo MP4', defaultPath: path.join(root, 'renders', `video-${Date.now()}.mp4`), filters: [{name: 'Vídeo MP4', extensions: ['mp4']}]});
     if (selected.canceled || !selected.filePath) return;
     const output = selected.filePath.toLowerCase().endsWith('.mp4') ? selected.filePath : selected.filePath + '.mp4';
+    // O preview é um Chromium inteiro: deixá-lo de pé durante o export rouba RAM e núcleos do render.
+    await remotion.stopStudio();
     // Exportar congela a marca: o snapshot entra antes do render, então o MP4 e o .brand-snapshot batem.
     let frozen: number | null = null;
     if (project.brand && !project.brand.lock) {
@@ -434,10 +436,15 @@ function registerIPC() {
       await persist(root, project);
     }
     await refreshBrand(root, project);
-    await remotion.render(root, output, settings);
-    lastRender = output;
-    log(`Vídeo concluído: ${output}`);
-    if (frozen !== null) log(`Marca congelada na versão ${frozen} para este projeto. Use "Atualizar para a marca atual" quando quiser acompanhar a marca de novo.`);
+    try {
+      await remotion.render(root, output, settings);
+      lastRender = output;
+      log(`Vídeo concluído: ${output}`);
+      if (frozen !== null) log(`Marca congelada na versão ${frozen} para este projeto. Use "Atualizar para a marca atual" quando quiser acompanhar a marca de novo.`);
+    } finally {
+      // O preview volta sozinho depois do export, tenha ele terminado ou falhado.
+      await remotion.preview(root, settings).catch(error => log(`Preview não voltou: ${(error as Error).message}`));
+    }
   }));
   handle('reveal', async () => {if (lastRender) shell.showItemInFolder(lastRender); else await shell.openPath(current().root);});
   handle('openRender', async () => {
@@ -470,9 +477,14 @@ function registerIPC() {
     if (typeof next.model !== 'string' || !/^[\w.[\]-]{0,100}$/.test(next.model.trim())) throw new Error('Modelo inválido.');
     if (!EFFORTS.includes(next.effort)) throw new Error('Esforço inválido.');
     if (typeof next.opencodePath !== 'string' || next.opencodePath.length > 4096) throw new Error('Caminho inválido.');
+    // Concorrência: vazio = automático; o resto precisa ser um inteiro pequeno e sensato.
+    const concurrency = typeof next.concurrency === 'string' ? next.concurrency.trim() : '';
+    if (concurrency && !/^(?:[1-9]|[1-5][0-9]|6[0-4])$/.test(concurrency)) throw new Error('Concorrência: deixe em branco (automático) ou use um número de 1 a 64.');
+    if (typeof next.gpu !== 'boolean') throw new Error('Opção inválida.');
     // Engine and OpenCode model change only through the connect screen or the chat options.
     settings = {...settings, claudePath: next.claudePath.trim(), nodePath: next.nodePath.trim(), npmPath: next.npmPath.trim(), opencodePath: next.opencodePath.trim(),
-      transcribe: next.transcribe, frames: next.frames, model: next.model.trim(), effort: next.effort};
+      transcribe: next.transcribe, frames: next.frames, model: next.model.trim(), effort: next.effort,
+      concurrency, gpu: next.gpu};
     await saveSettings();
   }));
   async function engineOptions(): Promise<ClaudeOptions> {
@@ -626,6 +638,8 @@ app.whenReady().then(async () => {
     if (typeof saved.opencodeModel === 'string' && MODEL_ID.test(saved.opencodeModel)) settings.opencodeModel = saved.opencodeModel;
     if (typeof saved.elevenlabs === 'boolean') settings.elevenlabs = saved.elevenlabs;
     if (typeof saved.autoMode === 'boolean') settings.autoMode = saved.autoMode;
+    if (typeof saved.concurrency === 'string') settings.concurrency = saved.concurrency;
+    if (typeof saved.gpu === 'boolean') settings.gpu = saved.gpu;
     for (const key of ['transcribe', 'frames'] as const) if (typeof saved[key] === 'boolean') settings[key] = saved[key];
   } catch {}
   window = new BrowserWindow({width: 1440, height: 940, minWidth: 1000, minHeight: 700, title: 'FramePilot',

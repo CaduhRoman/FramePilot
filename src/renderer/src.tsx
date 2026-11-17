@@ -199,6 +199,17 @@ function App() {
         {checking && <pre className="log">{checking}</pre>}<div className="row"><Button variant="primary" disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setChecking(await api.check());})}>Salvar e verificar</Button>
           <Button disabled={busy} onClick={() => void act(async () => {await api.settings(tools); setChecking('Configurações salvas.');})}>Salvar</Button></div>
       </section>
+      <section className="settings-card"><h2>Velocidade do render</h2>
+        <p>O export renderiza o vídeo frame a frame num navegador. Quanto mais frames em paralelo, mais rápido — e mais memória. O preview é parado automaticamente durante o export e volta ao terminar.</p>
+        <label className="field">Frames em paralelo
+          <input value={tools.concurrency} onChange={e => setTools({...tools, concurrency: e.target.value.replace(/[^0-9]/g, '')})}
+            placeholder="Automático" inputMode="numeric" />
+        </label>
+        <p><small>Em branco, o Remotion escolhe pelos núcleos da máquina. Baixe para 2 ou 3 se a máquina tiver pouca RAM livre e começar a usar swap.</small></p>
+        <label className="check"><input type="checkbox" checked={tools.gpu} onChange={e => setTools({...tools, gpu: e.target.checked})} />
+          Usar a GPU no render (Chrome for Testing + ANGLE, com encode por hardware)</label>
+        <p><small>Ajuda em desfoque, sombras e transformações. Filtros SVG pesados (grão com <code>feTurbulence</code>, nitidez com <code>feConvolveMatrix</code>) podem continuar na CPU mesmo assim. Na primeira vez o Remotion baixa o Chrome for Testing.</small></p>
+      </section>
       <section className="settings-card"><h2>Pasta de projetos</h2>
         <p>Novos projetos são criados automaticamente aqui e aparecem na tela inicial.</p>
         <code className="path">{state.library}</code>

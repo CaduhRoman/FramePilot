@@ -8,6 +8,7 @@ import {
   publicKit, putBrandAsset, readKit, removeBrandAsset, resolveKit, snapshotBrand, syncProjectBrand, updateBrand, validateKit
 } from '../src/main/brand';
 import {createProject, listProjects, moveProject, openProject, persist, projectFolder, promptFor} from '../src/main/project';
+import {DEFAULT_SETTINGS} from '../src/shared/types';
 import type {BrandKit, Project} from '../src/shared/types';
 
 const brief = {name: 'Reels JA', briefing: 'Reels da marca', width: 1080, height: 1920, fps: 30, duration: 10, style: '', notes: ''};
@@ -329,4 +330,24 @@ test('snapshot apagado à mão cai para a marca ao vivo em vez de deixar o proje
     assert.equal((await readGenerated(root)).locked, false, 'sem snapshot, o projeto não finge estar congelado');
     assert.match(await fs.readFile(path.join(root, 'remotion/public/brand/assets/logo.svg'), 'utf8'), /^<svg/);
   } finally {await fs.rm(base, {recursive: true, force: true});}
+});
+
+test('argumentos de render: concorrência automática por padrão e GPU só quando pedida', async () => {
+  const {Remotion} = await import('../src/main/remotion');
+  const {Processes} = await import('../src/main/processes');
+  const remotion = new Remotion(new Processes(), () => {}, () => {});
+  const base = {...DEFAULT_SETTINGS};
+
+  // O padrão não força mais 1 thread: forçar concorrência 1 deixava o export várias vezes mais lento.
+  const auto = remotion.renderArgs(base);
+  assert.deepEqual(auto, ['--codec', 'h264']);
+  assert.ok(!auto.includes('--concurrency'), 'sem --concurrency, o Remotion usa os núcleos disponíveis');
+
+  assert.deepEqual(remotion.renderArgs({...base, concurrency: '4'}), ['--codec', 'h264', '--concurrency', '4']);
+  assert.deepEqual(remotion.renderArgs({...base, concurrency: '  '}), ['--codec', 'h264'], 'espaços valem como automático');
+
+  // GPU: o chrome-headless-shell padrão não expõe placa, então a troca de modo é obrigatória.
+  const gpu = remotion.renderArgs({...base, gpu: true, concurrency: '3'});
+  assert.deepEqual(gpu, ['--codec', 'h264', '--concurrency', '3',
+    '--chrome-mode', 'chrome-for-testing', '--gl', 'angle', '--hardware-acceleration', 'if-possible']);
 });

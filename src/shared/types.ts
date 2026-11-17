@@ -105,9 +105,20 @@ export interface Settings {
   elevenlabs: boolean;
   /** Modo Auto: the agent works without asking (Claude Code's auto mode, OpenCode with every permission, FramePilot commands pre-approved). */
   autoMode: boolean;
+  /**
+   * Quantos frames o Remotion renderiza em paralelo. '' = automático (o Remotion decide pelos núcleos).
+   * Cada frame paralelo é uma aba de Chromium: em máquinas com pouca RAM, baixar isto evita swap.
+   */
+  concurrency: string;
+  /**
+   * Render pela GPU: troca o chrome-headless-shell (que não tem GPU) pelo Chrome for Testing com --gl angle,
+   * e pede encode por hardware quando disponível. Ajuda em blur, sombras e transformações;
+   * filtros SVG como feTurbulence podem continuar na CPU.
+   */
+  gpu: boolean;
 }
 export const DEFAULT_SETTINGS: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: '', effort: '',
-  engine: '', opencodePath: '', opencodeModel: FREE_MODEL, elevenlabs: false, autoMode: false};
+  engine: '', opencodePath: '', opencodeModel: FREE_MODEL, elevenlabs: false, autoMode: false, concurrency: '', gpu: false};
 /** What the connect screen needs to know about each CLI. */
 export interface ProviderStatus {
   claude: {installed: boolean; loggedIn: boolean; account?: string; method?: string};
