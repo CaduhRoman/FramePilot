@@ -4,10 +4,10 @@ import {Readable} from 'node:stream';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {AgentEngine, AppEvent, AssetKind, AssetPatch, Brief, ClaudeOptions, CommandRecord, LoginKind, Project, ProjectSummary, Settings, State} from '../shared/types';
+import type {AgentEngine, AppEvent, AssetKind, AssetPatch, Brief, ProjectKind, ClaudeOptions, CommandRecord, LoginKind, Project, ProjectSummary, Settings, State} from '../shared/types';
 import type {BrandDetail, BrandInput, BrandPatch} from '../shared/types';
 import {DEFAULT_SETTINGS, EFFORTS} from '../shared/types';
-import {createProject, importAsset, listProjects, mainContext, moveProject, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, refreshBrand, removeAsset, updateAsset, validateBrief, writeSettings, queueAsset, essentialAsset} from './project';
+import {createProject, importAsset, kindOf, listProjects, mainContext, moveProject, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, refreshBrand, removeAsset, updateAsset, validateBrief, writeSettings, queueAsset, essentialAsset} from './project';
 import {applyBrandKeys, brandCandidates, createBrand, KEY as BRAND_KEY, kitDir, listBrands, projectKit, putBrandAsset, removeBrandAsset, SNAPSHOT_DIR, snapshotBrand, syncProjectBrand, updateBrand} from './brand';
 import {ffmpegDir, prepareMaterial, probe} from './media';
 import {Processes, antigravityExecutable, claudeExecutable, opencodeExecutable} from './processes';
@@ -134,12 +134,14 @@ async function activate(nextRoot: string, next: Project) {
 }
 function registerIPC() {
   handle('state', async () => {await refreshProjects(); return state();});
-  handle('create', (brief: Brief, brandId?: string) => runTask('Criando projeto', async () => {
+  handle('create', (brief: Brief, brandId?: string, kind?: ProjectKind) => runTask('Criando projeto', async () => {
+    if (kind !== undefined && kind !== 'remotion' && kind !== 'hyperframes') throw new Error('Tipo de projeto inválido.');
     const id = brandId ? brandOf(brandId).kit.id : undefined;
     const nextRoot = await projectFolder(library, validateBrief(brief).name, id);
-    await activate(nextRoot, await createProject(nextRoot, brief, id));
-    await remotion.install(nextRoot, settings);
-    await remotion.preview(nextRoot, settings);
+    await activate(nextRoot, await createProject(nextRoot, brief, id, kind));
+    // HyperFrames roda por npx: não há node_modules no projeto para instalar.
+    if (kind !== 'hyperframes') await remotion.install(nextRoot, settings);
+    await remotion.preview(nextRoot, settings, kind, library);
   }));
   handle('open', (requested?: string) => runTask('Abrindo projeto', async () => {
     let nextRoot: string;
@@ -241,7 +243,7 @@ function registerIPC() {
     await refreshProjects();
     if (open) {
       await activate(moved, await openProject(moved));
-      await remotion.preview(moved, settings);
+      await remotion.preview(moved, settings, kindOf(project!), library);
     }
   }));
   handle('brandCandidates', async (target: string) => {
@@ -413,7 +415,7 @@ function registerIPC() {
     const {root, project} = current();
     // Reespelha o kit antes de subir o Studio: o preview sempre reflete a marca como ela está agora.
     await refreshBrand(root, project);
-    await remotion.preview(root, settings);
+    await remotion.preview(root, settings, kindOf(project), library);
   }));
   handle('install', () => runTask('Instalando dependências', async () => {
     const {root} = current();
@@ -437,13 +439,13 @@ function registerIPC() {
     }
     await refreshBrand(root, project);
     try {
-      await remotion.render(root, output, settings);
+      await remotion.render(root, output, settings, kindOf(project), library);
       lastRender = output;
       log(`Vídeo concluído: ${output}`);
       if (frozen !== null) log(`Marca congelada na versão ${frozen} para este projeto. Use "Atualizar para a marca atual" quando quiser acompanhar a marca de novo.`);
     } finally {
       // O preview volta sozinho depois do export, tenha ele terminado ou falhado.
-      await remotion.preview(root, settings).catch(error => log(`Preview não voltou: ${(error as Error).message}`));
+      await remotion.preview(root, settings, kindOf(project), library).catch(error => log(`Preview não voltou: ${(error as Error).message}`));
     }
   }));
   handle('reveal', async () => {if (lastRender) shell.showItemInFolder(lastRender); else await shell.openPath(current().root);});

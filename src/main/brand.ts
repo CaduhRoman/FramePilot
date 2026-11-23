@@ -373,6 +373,35 @@ export function kitDirOf(root: string, project: Project): string | null {
 }
 export const libraryOf = (root: string) => path.dirname(path.dirname(root));
 
+/**
+ * HyperFrames é HTML: a marca chega como variáveis CSS e arquivos em assets/brand/,
+ * em vez do módulo React com staticFile(). As mesmas chaves, outro formato.
+ */
+async function syncHyperframesBrand(root: string, origin: string, kit: BrandKit) {
+  const assets = path.join(root, 'assets', PUBLIC_DIR);
+  await mirror(origin, assets);
+  const file = (asset: {file: string; local?: boolean}) => asset.local ? asset.file : `assets/${PUBLIC_DIR}/${asset.file}`;
+  const fonts = Object.entries(kit.fonts).map(([role, font]) => {
+    const asset = font.asset ? kit.assets[font.asset] : undefined;
+    return {role, family: font.family, weight: font.weight, file: asset ? file(asset) : undefined};
+  });
+  await fs.writeFile(path.join(root, 'brand.css'), `/* Gerado pelo FramePilot a partir da marca "${kit.name}" (versão ${kit.version}). NÃO EDITE. */
+${fonts.filter(f => f.file).map(f => `@font-face {\n  font-family: '${f.family}';\n  src: url('${f.file}');\n  font-weight: ${f.weight ?? 'normal'};\n  font-display: block;\n}`).join('\n')}
+:root {
+${Object.entries(kit.colors).map(([name, value]) => `  --brand-${name}: ${value};`).join('\n')}
+${fonts.map(f => `  --brand-font-${f.role}: '${f.family}', system-ui, sans-serif;`).join('\n')}
+${kit.defaults.safeArea ? Object.entries(kit.defaults.safeArea).map(([side, px]) => `  --brand-safe-${side}: ${px}px;`).join('\n') : ''}
+}
+/* Arquivos da marca, por chave estável — use var(--brand-asset-logo) em background-image, ou o caminho direto em <img src>. */
+:root {
+${Object.entries(kit.assets).map(([key, asset]) => `  --brand-asset-${key}: url('${file(asset)}');`).join('\n')}
+}
+`);
+  // Um mapa legível para a IA saber as chaves sem abrir o CSS.
+  await fs.writeFile(path.join(root, 'assets', PUBLIC_DIR, 'brand-kit.json'),
+    JSON.stringify({...publicKit(kit), assets: Object.fromEntries(Object.entries(kit.assets).map(([k, a]) => [k, {...a, file: file(a)}]))}, null, 2));
+}
+
 /** Espelha o kit no projeto e reescreve brand-kit.json + brand.tsx. Chamado ao abrir, ao dar preview e antes do render. */
 export async function syncProjectBrand(root: string, project: Project): Promise<BrandKit | null> {
   const src = path.join(root, 'remotion/src');
@@ -385,7 +414,9 @@ export async function syncProjectBrand(root: string, project: Project): Promise<
       fs.rm(publicDir, {recursive: true, force: true}),
       fs.rm(components, {recursive: true, force: true}),
       fs.rm(path.join(src, 'brand.tsx'), {force: true}),
-      fs.rm(path.join(src, 'brand-kit.json'), {force: true})
+      fs.rm(path.join(src, 'brand-kit.json'), {force: true}),
+      fs.rm(path.join(root, 'brand.css'), {force: true}),
+      fs.rm(path.join(root, 'assets', PUBLIC_DIR), {recursive: true, force: true})
     ]);
     return null;
   }
@@ -396,6 +427,10 @@ export async function syncProjectBrand(root: string, project: Project): Promise<
   const lock = origin === snapshot ? project.brand!.lock : undefined;
   const raw = await fs.readFile(path.join(origin, 'brand.json'), 'utf8');
   const kit = resolveKit(validateKit(JSON.parse(raw), project.brand!.id), project.brand!.overrides);
+  if (project.kind === 'hyperframes') {
+    await syncHyperframesBrand(root, origin, kit);
+    return kit;
+  }
   await mirror(origin, publicDir);
   await mirror(path.join(origin, 'components'), components);
   await fs.mkdir(src, {recursive: true});

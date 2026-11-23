@@ -1,3 +1,8 @@
+/**
+ * Motor de composição do projeto. Ausente = remotion: todo projeto criado antes desta opção
+ * continua sendo Remotion, sem migração.
+ */
+export type ProjectKind = 'remotion' | 'hyperframes';
 export interface Brief {
   name: string;
   briefing: string;
@@ -81,6 +86,8 @@ export interface Project {
   /** Requeue these references when starting a new session. */
   essentialAssetIds?: string[];
   material?: Material;
+  /** Motor do projeto; ausente = remotion. */
+  kind?: ProjectKind;
   /** Vínculo com a marca; ausente em projetos avulsos, que seguem funcionando como antes. */
   brand?: ProjectBrand;
   /** Summary of the aligned Whisper transcripts, written by the harness. */
@@ -89,6 +96,7 @@ export interface Project {
   frames?: string;
 }
 export interface ProjectSummary {root: string; name: string; width: number; height: number; duration: number; messages: number; hasSession: boolean; updatedAt: string;
+  kind?: ProjectKind;
   /** Pasta da marca que contém o projeto; ausente em "Avulsos". */
   brandId?: string;
   /** Versão da marca congelada no último export, quando houver. */
@@ -166,7 +174,7 @@ export type AppEvent = {type: 'state'; state: State} | {type: 'log'; text: strin
   | {type: 'pty'; data: string} | {type: 'login'; data: string} | {type: 'login-exit'; code: number} | {type: 'command-output'; id: string; stream: 'stdout' | 'stderr'; text: string};
 export interface API {
   state(): Promise<State>;
-  create(brief: Brief, brandId?: string): Promise<void>;
+  create(brief: Brief, brandId?: string, kind?: ProjectKind): Promise<void>;
   open(root?: string): Promise<void>;
   close(): Promise<void>;
   showLibrary(): Promise<void>;

@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import {brandContext, COMPONENTS_DIR, kitDirOf, projectKit, SNAPSHOT_DIR, syncProjectBrand} from './brand';
-import type {AssetKind, AssetPatch, Brief, Project, ProjectSummary, Segment} from '../shared/types';
+import type {AssetKind, AssetPatch, Brief, Project, ProjectKind, ProjectSummary, Segment} from '../shared/types';
 
 export const REMOTION_VERSION = '4.0.533';
 /**
@@ -167,6 +167,7 @@ export function validateBrief(input: Brief): Brief {
 }
 export function context(project: Project, root?: string): string {
   const b = project.brief;
+  const hyperframes = kindOf(project) === 'hyperframes';
   const brand = brandBlock(root);
   return `# FramePilot — contexto de edição de vídeo\n
 Você trabalha no projeto local de vídeo controlado pelo harness FramePilot.
@@ -206,20 +207,32 @@ Consulte CLAUDE.md e outras skills locais relevantes.
 
 ## Estrutura e contrato do harness
 assets/ = originais; references/ = referências e documentos privados.
-remotion/public/assets/ = cópias dos assets usados pelo preview e render.
-remotion/src/index.ts = entrada; remotion/src/Root.tsx = composição principal.
-remotion/src/Video.tsx = edição livre; remotion/src/project-settings.json = configuração gerenciada.
+${(hyperframes ? [
+  'index.html = composição principal; compositions/ = cenas e componentes reutilizáveis.',
+  'Os assets são lidos direto de assets/ (paths.assets no hyperframes.json): não há cópia para public/.',
+  'O formato do vídeo vive no <body>: data-width, data-height, data-fps e data-duration.',
+  'Posicione no tempo com data-start e data-duration, em segundos.',
+  'hyperframes.json, meta.json e package.json são gerenciados pelo app: não os altere.',
+  'Animação determinística: nada de Math.random nem de timers; o render fotografa frame a frame.',
+  'Não rode npx hyperframes preview/render/check: o FramePilot cuida disso.'
+] : [
+  'remotion/public/assets/ = cópias dos assets usados pelo preview e render.',
+  'remotion/src/index.ts = entrada; remotion/src/Root.tsx = composição principal.',
+  'remotion/src/Video.tsx = edição livre; remotion/src/project-settings.json = configuração gerenciada.',
+  'Mantenha uma composição com ID Main e use project-settings.json para resolução, FPS e duração.',
+  'Use ferramentas oficiais do Remotion: Sequence, Img, staticFile e Video/Audio de @remotion/media.',
+  'Vídeo: use Video de @remotion/media (não OffthreadVideo nem Html5Video); recorte com trimBefore/durationInFrames.',
+  'Toda Sequence (ou Video com from) que contém vídeo/áudio recebe premountFor={fps} (1 s), para carregar antes do corte e evitar frames pretos no preview.',
+  'Não monte o mesmo arquivo duas vezes no mesmo trecho sem necessidade; se um efeito exigir duas instâncias, deixe só uma com som (a outra muted).',
+  'Animações devem depender de frames, sem aleatoriedade não determinística.',
+  'Se alterar package.json, avise que o usuário deve clicar em Instalar dependências.',
+  'Seu diretório de trabalho é a raiz deste projeto; código fica em remotion/.'
+]).join('\n')}
 project.json e CONTEXT.md são gerenciados pelo aplicativo: não os altere.
-${brand ? `remotion/src/brand.tsx, remotion/src/brand-kit.json, remotion/public/brand/ e remotion/src/${COMPONENTS_DIR}/ são gerados pelo app a partir da marca: não os edite.\n` : ''}
-Mantenha uma composição com ID Main e use project-settings.json para resolução, FPS e duração.
-Use ferramentas oficiais do Remotion: Sequence, Img, staticFile e Video/Audio de @remotion/media.
-Vídeo: use Video de @remotion/media (não OffthreadVideo nem Html5Video); recorte com trimBefore/durationInFrames.
-Toda Sequence (ou Video com from) que contém vídeo/áudio recebe premountFor={fps} (1 s), para carregar antes do corte e evitar frames pretos no preview.
-Não monte o mesmo arquivo duas vezes no mesmo trecho sem necessidade; se um efeito exigir duas instâncias, deixe só uma com som (a outra muted).
-Animações devem depender de frames, sem aleatoriedade não determinística.
+${brand ? (hyperframes
+  ? 'assets/brand/ e brand.css são gerados pelo app a partir da marca: não os edite; use as variáveis CSS var(--brand-*).\n'
+  : `remotion/src/brand.tsx, remotion/src/brand-kit.json, remotion/public/brand/ e remotion/src/${COMPONENTS_DIR}/ são gerados pelo app a partir da marca: não os edite.\n`) : ''}
 Não inicie servidores, não renderize e não instale dependências: o harness faz isso.
-Se alterar package.json, avise que o usuário deve clicar em Instalar dependências.
-Seu diretório de trabalho é a raiz deste projeto; código fica em remotion/.
 Você pode ler/escrever arquivos com suas ferramentas; Bash não é disponibilizado neste MVP; para frames use extract_frames.
 Trabalhe apenas dentro deste projeto. Responda de forma breve em português.
 O contexto completo é entregue no primeiro pedido da sessão; depois apenas deltas e o pedido atual.
@@ -273,20 +286,65 @@ export function persist(root: string, project: Project) {
   });
   return writes;
 }
-export async function writeSettings(root: string, brief: Brief) {
+/** Projetos antigos não têm `kind`; são todos Remotion. */
+export const kindOf = (project: Project): ProjectKind => project.kind ?? 'remotion';
+export async function writeSettings(root: string, brief: Brief, kind: ProjectKind = 'remotion') {
+  if (kind === 'hyperframes') return writeHyperframesSettings(root, brief);
   await fs.writeFile(path.join(root, 'remotion/src/project-settings.json'), JSON.stringify(brief, null, 2));
 }
-export async function createProject(root: string, input: Brief, brandId?: string): Promise<Project> {
+/** No HyperFrames o formato mora no próprio HTML (data-width/height/fps/duration no <body>). */
+async function writeHyperframesSettings(root: string, brief: Brief) {
+  const file = path.join(root, 'index.html');
+  const html = await fs.readFile(file, 'utf8').catch(() => '');
+  if (!html) return;
+  // O formato aparece no viewport, no CSS e nos data-* da raiz: todos acompanham o briefing.
+  // A duração fica de fora de propósito — depois do scaffold quem manda nela é a edição.
+  const next = html
+    .replace(/content="width=\d+, height=\d+"/, `content="width=${brief.width}, height=${brief.height}"`)
+    .replace(/width: \d+px; height: \d+px/, `width: ${brief.width}px; height: ${brief.height}px`)
+    .replace(/data-width="\d+"/g, `data-width="${brief.width}"`)
+    .replace(/data-height="\d+"/g, `data-height="${brief.height}"`)
+    .replace(/data-fps="[\d.]+"/g, `data-fps="${brief.fps}"`);
+  if (next !== html) await fs.writeFile(file, next);
+}
+export async function createProject(root: string, input: Brief, brandId?: string, kind: ProjectKind = 'remotion'): Promise<Project> {
   const brief = validateBrief(input);
   await fs.mkdir(root, {recursive: true});
   if ((await fs.readdir(root)).length) throw new Error('Escolha uma pasta vazia para o novo projeto.');
-  for (const dir of ['assets', 'references', 'remotion/src', 'remotion/public/assets', 'renders']) {
-    await fs.mkdir(path.join(root, dir), {recursive: true});
-  }
+  // O HyperFrames lê os assets direto de assets/ (paths.assets no hyperframes.json), sem cópia para public/.
+  const dirs = kind === 'hyperframes'
+    ? ['assets', 'references', 'compositions/components', 'renders']
+    : ['assets', 'references', 'remotion/src', 'remotion/public/assets', 'renders'];
+  for (const dir of dirs) await fs.mkdir(path.join(root, dir), {recursive: true});
   const project: Project = {version: 1, id: randomUUID(), brief, assets: [], changes: [],
     session: {initialSent: false}, messages: [], pendingAssetIds: [], essentialAssetIds: [],
+    ...(kind === 'hyperframes' ? {kind} : {}),
     // A marca é a pasta-mãe: se o projeto não foi criado dentro dela, não há vínculo a registrar.
     ...(brandId && path.basename(path.dirname(root)) === brandId ? {brand: {id: brandId}} : {})};
+  if (kind === 'hyperframes') {
+    await writeHyperframesScaffold(root, brief);
+    await ensureProjectSkills(root);
+    // A skill hyperframes-craft foi escrita para projetos Remotion e proíbe criar arquivos
+    // HyperFrames. Aqui ela está invertida, então o CLAUDE.md do projeto diz isso na cara.
+    await fs.appendFile(path.join(root, 'CLAUDE.md'), `
+
+<!-- framepilot-hyperframes -->
+## Este projeto é HyperFrames, não Remotion
+
+A composição é HTML: \`index.html\` na raiz, cenas e componentes em \`compositions/\`.
+
+A skill \`.claude/skills/hyperframes-craft/\` diz "este projeto é Remotion" e proíbe criar
+arquivos HyperFrames. **Aqui vale o contrário**: use as referências dela como direção *e*
+escreva HTML/CSS HyperFrames de verdade. A tabela de tradução para Remotion não se aplica —
+\`data-start\` e \`data-duration\` em segundos são o formato nativo deste projeto.
+
+Siga valendo: \`video-craft\` prevalece sobre tudo, animação determinística (sem \`Math.random\`
+nem timers), e não rode \`npx hyperframes preview/render/check\` — o FramePilot cuida disso.
+`);
+    await refreshBrand(root, project);
+    await persist(root, project);
+    return project;
+  }
   await fs.writeFile(path.join(root, 'remotion/package.json'), JSON.stringify({
     name: 'framepilot-video', private: true, version: '1.0.0',
     scripts: {studio: 'remotion studio src/index.ts', render: 'remotion render src/index.ts Main'},
@@ -346,6 +404,65 @@ export const Video = () => {
   await persist(root, project);
   return project;
 }
+/** Versão do HyperFrames fixada nos scripts, para o projeto não mudar de motor sozinho num npx. */
+export const HYPERFRAMES_VERSION = '0.9.84';
+/**
+ * Scaffold do HyperFrames escrito aqui, e não por `hyperframes init`: o init cria uma subpasta
+ * com o nome do projeto, instala skills próprias e escreve o próprio CLAUDE.md, o que brigaria
+ * com a pasta e as skills que o FramePilot já gerencia. São poucos arquivos e assim a criação
+ * não depende de rede, igual ao scaffold do Remotion.
+ */
+async function writeHyperframesScaffold(root: string, brief: Brief) {
+  const hf = `npx --yes hyperframes@${HYPERFRAMES_VERSION}`;
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({
+    name: 'framepilot-video', private: true, type: 'module',
+    scripts: {dev: `${hf} preview`, check: `${hf} check`, render: `${hf} render`}
+  }, null, 2));
+  await fs.writeFile(path.join(root, 'hyperframes.json'), JSON.stringify({
+    $schema: 'https://hyperframes.heygen.com/schema/hyperframes.json',
+    registry: 'https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry',
+    paths: {blocks: 'compositions', components: 'compositions/components', assets: 'assets'},
+    media: {autoProxy: true}
+  }, null, 2));
+  await fs.writeFile(path.join(root, 'meta.json'), JSON.stringify({id: randomUUID(), name: brief.name, createdAt: new Date().toISOString()}, null, 2));
+  // Estrutura exigida pelo runtime: a raiz precisa de data-composition-id e data-duration,
+  // e a timeline tem de ser registrada em window.__timelines, senão o render acusa duração zero.
+  await fs.writeFile(path.join(root, 'index.html'), `<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=${brief.width}, height=${brief.height}" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      :root { --ground: #15171b; --ink: #ffffff; --font-display: system-ui, sans-serif; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; width: ${brief.width}px; height: ${brief.height}px; overflow: hidden; background: var(--ground); }
+      #root { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+        text-align: center; font-family: var(--font-display); color: var(--ink); }
+      #title { font-size: 72px; font-weight: 700; letter-spacing: -0.03em; }
+      #subtitle { font-size: 28px; margin-top: 24px; opacity: .8; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="${brief.duration}"
+      data-width="${brief.width}" data-height="${brief.height}" data-fps="${brief.fps}">
+      <div>
+        <h1 id="title" class="clip" data-start="0" data-duration="${brief.duration}" data-track-index="0">${brief.name}</h1>
+        <p id="subtitle" class="clip" data-start="0" data-duration="${brief.duration}" data-track-index="1">Seu vídeo começa aqui.</p>
+      </div>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo('#title', {opacity: 0}, {opacity: 1, duration: 0.5, ease: 'power2.out'}, 0);
+      tl.fromTo('#subtitle', {opacity: 0}, {opacity: 1, duration: 0.5, ease: 'power2.out'}, 0.2);
+      window.__timelines['main'] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
+`);
+}
+
 /** Espelha o kit no projeto, regenera brand.tsx/brand-kit.json e guarda o bloco de contexto da marca. */
 export async function refreshBrand(root: string, project: Project): Promise<void> {
   if (!project.brand) {
@@ -382,9 +499,10 @@ export async function openProject(root: string): Promise<Project> {
     recoveredSend = true;
   }
   if (p.session.id && !/^[a-f0-9-]{36}$/i.test(p.session.id)) throw new Error('ID de sessão inválido.');
-  await fs.access(path.join(root, 'remotion/src/index.ts'));
+  await fs.access(path.join(root, kindOf(p) === 'hyperframes' ? 'index.html' : 'remotion/src/index.ts'));
   await ensureProjectSkills(root);
-  await ensureMediaPlayback(root, p);
+  // A migração de OffthreadVideo só existe no mundo Remotion.
+  if (kindOf(p) !== 'hyperframes') await ensureMediaPlayback(root, p);
   await refreshBrand(root, p);
   if (recoveredSend || migrated) await persist(root, p);
   return p;
@@ -414,7 +532,8 @@ export async function importAsset(root: string, project: Project, source: string
   const relative = `${folder}/${id.slice(0, 8)}-${safeName}`;
   await fs.copyFile(source, path.join(root, relative));
   // Main videos reach Remotion only as prepared material, never as the full original.
-  const publicPath = folder === 'assets' && kind !== 'main' ? relative : undefined;
+  // No HyperFrames não há cópia para public/: o hyperframes.json aponta paths.assets para assets/.
+  const publicPath = kindOf(project) !== 'hyperframes' && folder === 'assets' && kind !== 'main' ? relative : undefined;
   if (publicPath) await fs.copyFile(source, path.join(root, 'remotion/public', publicPath));
   project.assets.push({id, name, path: relative, kind, note, publicPath});
   queueAsset(project, id, true);
@@ -445,6 +564,7 @@ async function readSummary(root: string, brandId?: string): Promise<ProjectSumma
     return {root, name: p.brief.name, width: p.brief.width, height: p.brief.height, duration: p.brief.duration,
       messages: Array.isArray(p.messages) ? p.messages.filter(m => m.role !== 'system').length : 0,
       hasSession: Boolean(p.session?.id), updatedAt: stat.mtime.toISOString(),
+      ...(p.kind === 'hyperframes' ? {kind: p.kind} : {}),
       // A pasta manda: um projeto dentro de uma marca pertence a ela mesmo que o project.json ainda não saiba.
       ...(brandId ? {brandId} : {}), ...(brandId && p.brand?.lock ? {brandLock: p.brand.lock.version} : {})};
   } catch {return null;}

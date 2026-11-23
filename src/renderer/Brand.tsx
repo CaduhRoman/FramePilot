@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import type {API, BrandDetail, BrandInput, BrandKit, BrandPatch, Brief, ProjectSummary} from '../shared/types';
+import type {API, BrandDetail, BrandInput, BrandKit, BrandPatch, Brief, ProjectKind, ProjectSummary} from '../shared/types';
 import {Button, EmptyState, Icon, IconButton, Menu, MenuItem} from './ui';
 import {Select} from './Select';
 
@@ -30,6 +30,7 @@ function ProjectCard({summary, brand, busy, onOpen, onMove}: {
       <span className="chips">
         {brand && <span className="chip" style={{borderColor: brand.kit.colors.primary, color: brand.kit.colors.primary}}>{brand.kit.name}</span>}
         <span className="chip">{formatLabel(summary.width, summary.height)}</span>
+        {summary.kind === 'hyperframes' && <span className="chip" title="Projeto HyperFrames (HTML)">HyperFrames</span>}
         {summary.brandLock !== undefined && <span className="chip" title={`Congelado na versão ${summary.brandLock} da marca, pelo último export.`}>Marca v{summary.brandLock}</span>}
       </span>
       <small className="project-meta">
@@ -267,6 +268,7 @@ export function NewProjectDialog({brands, initialBrand, defaults, api, act, busy
   act: (action: () => Promise<unknown>) => Promise<unknown>; busy: boolean; onClose: () => void;
 }) {
   const [step, setStep] = useState<'brand' | 'brief'>(brands.length ? 'brand' : 'brief');
+  const [kind, setKind] = useState<ProjectKind>('remotion');
   const [brandId, setBrandId] = useState(initialBrand ?? '');
   const [brief, setBrief] = useState<Brief>(defaults);
   const brand = brands.find(b => b.kit.id === brandId);
@@ -296,7 +298,7 @@ export function NewProjectDialog({brands, initialBrand, defaults, api, act, busy
       <div className="row"><Button variant="ghost" onClick={onClose}>Fechar</Button></div>
     </> : <form onSubmit={e => {
       e.preventDefault();
-      void act(async () => {await api.create(brief, brandId || undefined); onClose();});
+      void act(async () => {await api.create(brief, brandId || undefined, kind); onClose();});
     }}>
       {brand && brand.kit.templates.length > 0 && <label className="field">Template da marca
         <ul className="template-picker">{brand.kit.templates.map(t => {
@@ -306,6 +308,16 @@ export function NewProjectDialog({brands, initialBrand, defaults, api, act, busy
             {t.description && <small>{t.description}</small>}
           </button></li>;
         })}</ul></label>}
+      <label className="field">Motor de composição
+        <ul className="template-picker">
+          {([
+            {id: 'remotion' as const, name: 'Remotion', hint: 'React e TypeScript. Vídeo como componente, com frames e interpolação.'},
+            {id: 'hyperframes' as const, name: 'HyperFrames', hint: 'HTML e CSS. Composição numa página, com data-start e data-duration.'}
+          ]).map(option => <li key={option.id}>
+            <button type="button" className={`template-option ${kind === option.id ? 'selected' : ''}`} onClick={() => setKind(option.id)}>
+              <strong>{option.name}</strong><small>{option.hint}</small>
+            </button></li>)}
+        </ul></label>
       <label className="field">Nome<input required maxLength={200} value={brief.name} onChange={e => setBrief({...brief, name: e.target.value})} autoFocus /></label>
       <label className="field">Briefing / objetivo<textarea rows={3} value={brief.briefing} onChange={e => setBrief({...brief, briefing: e.target.value})}
         placeholder="Tipo de vídeo, público, mensagem, estrutura e resultado esperado" /></label>

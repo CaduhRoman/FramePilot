@@ -3,7 +3,7 @@ import type {API, AppEvent} from '../shared/types';
 
 const api: API = {
   state: () => ipcRenderer.invoke('fp:state'),
-  create: (brief, brandId) => ipcRenderer.invoke('fp:create', brief, brandId),
+  create: (brief, brandId, kind) => ipcRenderer.invoke('fp:create', brief, brandId, kind),
   open: root => ipcRenderer.invoke('fp:open', root),
   close: () => ipcRenderer.invoke('fp:close'),
   showLibrary: () => ipcRenderer.invoke('fp:library'),

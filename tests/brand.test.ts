@@ -7,7 +7,7 @@ import {
   applyBrandKeys, brandCandidates, brandContext, brandId, createBrand, kitDir, listBrands, mirror, projectKit,
   publicKit, putBrandAsset, readKit, removeBrandAsset, resolveKit, snapshotBrand, syncProjectBrand, updateBrand, validateKit
 } from '../src/main/brand';
-import {createProject, listProjects, moveProject, openProject, persist, projectFolder, promptFor} from '../src/main/project';
+import {createProject, importAsset, listProjects, moveProject, openProject, persist, projectFolder, promptFor} from '../src/main/project';
 import {DEFAULT_SETTINGS} from '../src/shared/types';
 import type {BrandKit, Project} from '../src/shared/types';
 
@@ -363,4 +363,61 @@ test('Antigravity: binário do runtime do OpenBot e ids de modelo com reasoning 
   const {ANTIGRAVITY_MODEL} = await import('../src/shared/types');
   assert.equal(ANTIGRAVITY_MODEL, 'gemini-4-neon-medium');
   assert.match(ANTIGRAVITY_MODEL, /^[a-z0-9][a-z0-9.-]{1,80}$/, 'precisa passar na validação do IPC');
+});
+
+test('projeto HyperFrames: scaffold próprio, sem cópia para public/ e contrato certo para a IA', async () => {
+  const {base, library: lib} = await library();
+  try {
+    const root = await projectFolder(lib, 'Reel HTML');
+    const project = await createProject(root, {...brief, name: 'Reel HTML'}, undefined, 'hyperframes');
+    assert.equal(project.kind, 'hyperframes');
+
+    // Scaffold do HyperFrames, não do Remotion.
+    const html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
+    assert.match(html, /data-width="1080"[\s\S]*data-height="1920"/);
+    assert.match(html, /data-fps="30"/);
+    assert.match(await fs.readFile(path.join(root, 'hyperframes.json'), 'utf8'), /"assets": "assets"/);
+    await assert.rejects(fs.access(path.join(root, 'remotion/src/index.ts')), 'não cria estrutura Remotion');
+
+    // Abrir valida index.html em vez de remotion/src/index.ts.
+    assert.equal((await openProject(root)).kind, 'hyperframes');
+
+    // Assets ficam só em assets/: o HyperFrames lê de lá, sem publicPath.
+    const logo = path.join(base, 'logo.svg');
+    await fs.writeFile(logo, SVG);
+    await importAsset(root, project, logo, 'logo', 'Logo');
+    assert.equal(project.assets[0].publicPath, undefined);
+    await assert.rejects(fs.access(path.join(root, 'remotion/public')));
+
+    // A IA recebe o contrato do HyperFrames, não o do Remotion.
+    const context = await fs.readFile(path.join(root, 'CONTEXT.md'), 'utf8');
+    assert.match(context, /index\.html = composição principal/);
+    assert.match(context, /data-start e data-duration/);
+    assert.doesNotMatch(context, /premountFor|@remotion\/media/);
+
+    // E o projeto Remotion segue com o contrato dele.
+    const other = await projectFolder(lib, 'Reel React');
+    await createProject(other, {...brief, name: 'Reel React'});
+    const remotionContext = await fs.readFile(path.join(other, 'CONTEXT.md'), 'utf8');
+    assert.match(remotionContext, /premountFor/);
+    assert.doesNotMatch(remotionContext, /data-start/);
+  } finally {await fs.rm(base, {recursive: true, force: true});}
+});
+
+test('argumentos do HyperFrames: preview com porta e render com formato e workers', async () => {
+  const {Remotion} = await import('../src/main/remotion');
+  const {Processes} = await import('../src/main/processes');
+  const hf = new Remotion(new Processes(), () => {}, () => {});
+  const base = {...DEFAULT_SETTINGS};
+
+  const preview = hf.hyperframesArgs('preview', 4321, '', base);
+  assert.deepEqual(preview.slice(-4), ['preview', '--port', '4321', '--no-open']);
+  assert.match(preview[1], /^hyperframes@\d+\.\d+\.\d+$/, 'a versão é fixada, não "latest"');
+
+  // Sem concorrência configurada, o HyperFrames escolhe os workers sozinho.
+  const render = hf.hyperframesArgs('render', 0, 'out.mp4', base);
+  assert.deepEqual(render.slice(-4), ['--output', 'out.mp4', '--format', 'mp4']);
+  assert.ok(!render.includes('--workers'));
+  // Com concorrência, o mesmo ajuste do Remotion vale aqui.
+  assert.deepEqual(hf.hyperframesArgs('render', 0, 'out.mp4', {...base, concurrency: '3'}).slice(-2), ['--workers', '3']);
 });
