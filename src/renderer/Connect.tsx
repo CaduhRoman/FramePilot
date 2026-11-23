@@ -175,6 +175,20 @@ export function ConnectDialog({api, act, settings, busy, step: initialStep = 'ai
 
         <div className="auth-or" role="separator"><span>ou</span></div>
 
+        {/* Antigravity: vem com o OpenBot e já traz o login do Gemini 4, que o Gemini CLI avulso perdeu. */}
+        <button className="auth-free" disabled={busy || checking || !status?.antigravity.installed}
+          onClick={() => connect('antigravity', settings.antigravityModel)}>
+          <BrandMark brand="other" />
+          <span className="auth-provider-text">
+            <strong>Antigravity</strong>
+            <small>{status?.antigravity.models.length
+              ? `Gemini 4 Neon · ${status.antigravity.models.length} modelos · conta do OpenBot`
+              : status?.antigravity.installed ? 'Instalado, mas sem responder a lista de modelos — verifique o login no OpenBot'
+              : 'Não encontrado. Vem junto com o OpenBot.'}</small>
+          </span>
+          <span className="auth-free-tag">{checking ? '…' : status?.antigravity.models.length ? 'Conectar' : 'Indisponível'}</span>
+        </button>
+
         <button className="auth-free" disabled={busy || checking} onClick={startFree}>
           <BrandMark brand="deepseek" />
           <span className="auth-provider-text">

@@ -95,12 +95,16 @@ export interface ProjectSummary {root: string; name: string; width: number; heig
   brandLock?: number}
 /** '' until the user picks a provider on the first-run connect screen. */
 export type Engine = '' | AgentEngine;
-export type AgentEngine = 'claude' | 'opencode';
+export type AgentEngine = 'claude' | 'opencode' | 'antigravity';
 /** Free model served by OpenCode Zen; no account needed. */
+/** Modelo padrão do Antigravity: Gemini 4 Neon com reasoning médio. */
+export const ANTIGRAVITY_MODEL = 'gemini-4-neon-medium';
 export const FREE_MODEL = 'opencode/deepseek-v4.1-flash-free';
 export interface Settings {
   claudePath: string; nodePath: string; npmPath: string; transcribe: boolean; frames: boolean; model: string; effort: string;
   engine: Engine; opencodePath: string; opencodeModel: string;
+  /** Antigravity (Gemini 4 e outros). O binário vem do runtime que o OpenBot instala; vazio = procurar sozinho. */
+  antigravityPath: string; antigravityModel: string;
   /** ElevenLabs hosted MCP (narration, voices, sound effects) offered to the agent once the user signs in. */
   elevenlabs: boolean;
   /** Modo Auto: the agent works without asking (Claude Code's auto mode, OpenCode with every permission, FramePilot commands pre-approved). */
@@ -118,13 +122,16 @@ export interface Settings {
   gpu: boolean;
 }
 export const DEFAULT_SETTINGS: Settings = {claudePath: '', nodePath: '', npmPath: '', transcribe: true, frames: true, model: '', effort: '',
-  engine: '', opencodePath: '', opencodeModel: FREE_MODEL, elevenlabs: false, autoMode: false, concurrency: '', gpu: false};
+  engine: '', opencodePath: '', opencodeModel: FREE_MODEL, antigravityPath: '', antigravityModel: ANTIGRAVITY_MODEL, elevenlabs: false, autoMode: false, concurrency: '', gpu: false};
 /** What the connect screen needs to know about each CLI. */
 export interface ProviderStatus {
   claude: {installed: boolean; loggedIn: boolean; account?: string; method?: string};
   opencode: {installed: boolean; version?: string; providers: string[]};
+  /** `models` vem de `antigravity models`, que só responde autenticado: lista vazia = sem acesso. */
+  antigravity: {installed: boolean; path?: string; models: string[]};
   /** ElevenLabs sign-in per agent CLI (each keeps its own OAuth token). */
-  elevenlabs: {claude: boolean; opencode: boolean};
+  /** Login da ElevenLabs por CLI. O Antigravity ainda não registra o MCP dela: sempre false. */
+  elevenlabs: {claude: boolean; opencode: boolean; antigravity: boolean};
 }
 /** Interactive logins and installs run in a pseudo-terminal shown on the connect screen. */
 export type LoginKind = 'claude' | 'opencode-openai' | 'opencode-copilot' | 'opencode-other' | 'install-opencode' | 'elevenlabs';

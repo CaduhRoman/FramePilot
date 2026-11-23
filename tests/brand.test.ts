@@ -351,3 +351,16 @@ test('argumentos de render: concorrência automática por padrão e GPU só quan
   assert.deepEqual(gpu, ['--codec', 'h264', '--concurrency', '3',
     '--chrome-mode', 'chrome-for-testing', '--gl', 'angle', '--hardware-acceleration', 'if-possible']);
 });
+
+test('Antigravity: binário do runtime do OpenBot e ids de modelo com reasoning embutido', async () => {
+  const {antigravityExecutable} = await import('../src/main/processes');
+  // Sem caminho configurado ele procura o runtime do OpenBot; não achando, cai para o PATH.
+  const found = antigravityExecutable('');
+  assert.ok(found === 'antigravity' || /antigravity(\.exe)?$/.test(found), `caminho inesperado: ${found}`);
+  assert.equal(antigravityExecutable('  C:/custom/antigravity.exe  '), 'C:/custom/antigravity.exe');
+
+  // O id do modelo carrega o nível de reasoning, então "medium" não é uma flag separada.
+  const {ANTIGRAVITY_MODEL} = await import('../src/shared/types');
+  assert.equal(ANTIGRAVITY_MODEL, 'gemini-4-neon-medium');
+  assert.match(ANTIGRAVITY_MODEL, /^[a-z0-9][a-z0-9.-]{1,80}$/, 'precisa passar na validação do IPC');
+});

@@ -10,8 +10,8 @@ import {DEFAULT_SETTINGS, EFFORTS} from '../shared/types';
 import {createProject, importAsset, listProjects, mainContext, moveProject, transcriptContext, framesContext, moveAsset, openProject, persist, projectFolder, refreshBrand, removeAsset, updateAsset, validateBrief, writeSettings, queueAsset, essentialAsset} from './project';
 import {applyBrandKeys, brandCandidates, createBrand, KEY as BRAND_KEY, kitDir, listBrands, projectKit, putBrandAsset, removeBrandAsset, SNAPSHOT_DIR, snapshotBrand, syncProjectBrand, updateBrand} from './brand';
 import {ffmpegDir, prepareMaterial, probe} from './media';
-import {Processes, claudeExecutable, opencodeExecutable} from './processes';
-import {LoginShell, opencodeModels, providerStatus, registerElevenlabsForClaude} from './providers';
+import {Processes, antigravityExecutable, claudeExecutable, opencodeExecutable} from './processes';
+import {antigravityModels, LoginShell, opencodeModels, providerStatus, registerElevenlabsForClaude} from './providers';
 import {extractFrames} from './frames';
 import {ensureWhisper, transcribeMissing, writeAlignedTranscripts, type Stoppable} from './transcribe';
 import {Claude} from './claude';
@@ -488,6 +488,17 @@ function registerIPC() {
     await saveSettings();
   }));
   async function engineOptions(): Promise<ClaudeOptions> {
+    if (settings.engine === 'antigravity') {
+      // O nível de reasoning faz parte do id do modelo (gemini-4-neon-medium), então não há lista de esforço separada.
+      const {models, installed} = await antigravityModels(processes, settings);
+      if (!models.length) {
+        return {models: [{value: settings.antigravityModel, label: settings.antigravityModel}], efforts: [''],
+          notice: installed ? 'O Antigravity não respondeu a lista de modelos. Verifique o login (o OpenBot usa a mesma conta).'
+            : 'Antigravity não encontrado. Ele vem com o OpenBot; aponte o executável em Ferramentas se estiver em outro lugar.'};
+      }
+      return {models: models.map(value => ({value, label: value})), efforts: [''],
+        notice: 'Modelos do Antigravity (o nível de reasoning faz parte do nome do modelo).'};
+    }
     if (settings.engine !== 'opencode') return claudeOptions(processes, settings.claudePath);
     try {
       const models = await opencodeModels(processes, settings);
@@ -496,6 +507,13 @@ function registerIPC() {
   }
   handle('claudeOptions', engineOptions);
   handle('claudePreference', (model: string, effort: string) => runTask('Configurando IA', async () => {
+    if (settings.engine === 'antigravity') {
+      const {models} = await antigravityModels(processes, settings);
+      if (typeof model !== 'string' || (models.length && !models.includes(model))) throw new Error('Modelo não disponível no Antigravity.');
+      settings = {...settings, antigravityModel: model};
+      await saveSettings();
+      return;
+    }
     if (settings.engine === 'opencode') {
       if (typeof model !== 'string' || !MODEL_ID.test(model) || !(await opencodeModels(processes, settings)).includes(model)) throw new Error('Modelo não disponível no OpenCode.');
       settings = {...settings, opencodeModel: model};
@@ -514,12 +532,17 @@ function registerIPC() {
   handle('providers', () => providerStatus(processes, settings));
   handle('opencodeModels', () => opencodeModels(processes, settings));
   handle('connect', (engine: AgentEngine, model?: string) => runTask('Conectando IA', async () => {
-    if (engine !== 'claude' && engine !== 'opencode') throw new Error('Provedor inválido.');
+    if (engine !== 'claude' && engine !== 'opencode' && engine !== 'antigravity') throw new Error('Provedor inválido.');
     if (engine === 'opencode' && (typeof model !== 'string' || !MODEL_ID.test(model))) throw new Error('Modelo inválido.');
+    // Ids do Antigravity são simples (gemini-4-neon-medium), sem a barra de provedor que o OpenCode usa.
+    if (engine === 'antigravity' && model !== undefined && !/^[a-z0-9][a-z0-9.-]{1,80}$/.test(model)) throw new Error('Modelo inválido.');
     login.stop();
-    settings = {...settings, engine, ...(engine === 'opencode' ? {opencodeModel: model!} : {})};
+    settings = {...settings, engine, ...(engine === 'opencode' ? {opencodeModel: model!} : {}),
+      ...(engine === 'antigravity' && model ? {antigravityModel: model} : {})};
     await saveSettings();
-    log(engine === 'claude' ? 'IA conectada: Claude Code.' : `IA conectada: OpenCode (${model}).`);
+    log(engine === 'claude' ? 'IA conectada: Claude Code.'
+      : engine === 'antigravity' ? `IA conectada: Antigravity (${settings.antigravityModel}).`
+      : `IA conectada: OpenCode (${model}).`);
   }));
   const logins: LoginKind[] = ['claude', 'opencode-openai', 'opencode-copilot', 'opencode-other', 'install-opencode', 'elevenlabs'];
   handle('loginStart', (kind: LoginKind, cols: number, rows: number) => {
@@ -557,7 +580,9 @@ function registerIPC() {
   handle('loginStop', () => login.stop());
   handle('check', () => runTask('Verificando ferramentas', async () => {
     const results: string[] = [];
-    const agent = settings.engine === 'opencode' ? ['OpenCode', opencodeExecutable(settings.opencodePath)] : ['Claude', claudeExecutable(settings.claudePath)];
+    const agent = settings.engine === 'opencode' ? ['OpenCode', opencodeExecutable(settings.opencodePath)]
+      : settings.engine === 'antigravity' ? ['Antigravity', antigravityExecutable(settings.antigravityPath)]
+      : ['Claude', claudeExecutable(settings.claudePath)];
     for (const [name, command] of [['Node', settings.nodePath || 'node'], ['npm', settings.npmPath || 'npm'], agent]) {
       const job = processes.start(command, ['--version'], app.getPath('userData'));
       job.child.stdin?.end();
@@ -634,12 +659,14 @@ app.whenReady().then(async () => {
     const saved = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
     for (const key of ['claudePath', 'nodePath', 'npmPath', 'model', 'opencodePath'] as const) if (typeof saved[key] === 'string') settings[key] = saved[key];
     if (EFFORTS.includes(saved.effort)) settings.effort = saved.effort;
-    if (saved.engine === 'claude' || saved.engine === 'opencode') settings.engine = saved.engine;
+    if (saved.engine === 'claude' || saved.engine === 'opencode' || saved.engine === 'antigravity') settings.engine = saved.engine;
     if (typeof saved.opencodeModel === 'string' && MODEL_ID.test(saved.opencodeModel)) settings.opencodeModel = saved.opencodeModel;
     if (typeof saved.elevenlabs === 'boolean') settings.elevenlabs = saved.elevenlabs;
     if (typeof saved.autoMode === 'boolean') settings.autoMode = saved.autoMode;
     if (typeof saved.concurrency === 'string') settings.concurrency = saved.concurrency;
     if (typeof saved.gpu === 'boolean') settings.gpu = saved.gpu;
+    if (typeof saved.antigravityPath === 'string') settings.antigravityPath = saved.antigravityPath;
+    if (typeof saved.antigravityModel === 'string') settings.antigravityModel = saved.antigravityModel;
     for (const key of ['transcribe', 'frames'] as const) if (typeof saved[key] === 'boolean') settings[key] = saved[key];
   } catch {}
   window = new BrowserWindow({width: 1440, height: 940, minWidth: 1000, minHeight: 700, title: 'FramePilot',

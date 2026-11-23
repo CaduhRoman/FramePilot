@@ -4,7 +4,7 @@ import {promises as fs} from 'node:fs';
 import path from 'node:path';
 import type {AgentEngine, AppEvent, Project, Settings} from '../shared/types';
 import {persist, promptFor} from './project';
-import {claudeExecutable, environment, jsonLines, opencodeExecutable, Processes, type Job} from './processes';
+import {antigravityExecutable, claudeExecutable, environment, jsonLines, opencodeExecutable, Processes, type Job} from './processes';
 import type {Bridge} from './terminal';
 import {ELEVENLABS, elevenlabsClaudeServer, elevenlabsOpencodeServer} from './providers';
 
@@ -19,8 +19,15 @@ const elevenlabsReminder = (prefix: string) => `ElevenLabs está conectada (ferr
 const AUTO_TOOLS = ',Bash,WebFetch,WebSearch,TodoWrite';
 const autoReminder = 'Modo Auto ativo: a pessoa liberou você para trabalhar sem pedir permissão (terminal, internet, pacotes do projeto, downloads). '
   + 'Resolva o pedido de ponta a ponta sem parar para confirmar. Mesmo assim, não apague os arquivos originais da pessoa nem mexa fora do projeto sem necessidade.';
-const SESSION_ID: Record<AgentEngine, RegExp> = {claude: /^[a-f0-9-]{36}$/i, opencode: /^ses_[A-Za-z0-9]{8,64}$/};
-const NAMES: Record<AgentEngine, string> = {claude: 'Claude', opencode: 'OpenCode'};
+const SESSION_ID: Record<AgentEngine, RegExp> = {claude: /^[a-f0-9-]{36}$/i, opencode: /^ses_[A-Za-z0-9]{8,64}$/,
+  antigravity: /^[a-f0-9-]{36}$/i};
+const NAMES: Record<AgentEngine, string> = {claude: 'Claude', opencode: 'OpenCode', antigravity: 'Antigravity'};
+/**
+ * O Antigravity recebe o prompt na própria linha de comando (`-p=…`), e o Windows corta a
+ * linha em 32.767 caracteres. Acima deste limite o pedido vai para um arquivo do projeto e
+ * a linha carrega só o caminho — o agente lê com as ferramentas que já tem.
+ */
+const ANTIGRAVITY_INLINE_LIMIT = 24_000;
 
 /** The FramePilot MCP server (frames + terminal tools). Electron runs the bundled frame-tool in Node mode. */
 function mcpServer(root: string, bridge?: Bridge) {
@@ -61,7 +68,7 @@ export class Claude {
   async send(root: string, project: Project, request: string, settings: Settings) {
     if (this.job) throw new Error('Aguarde ou interrompa a resposta atual.');
     if (typeof request !== 'string' || !request.trim() || request.length > 100_000) throw new Error('Pedido vazio ou muito longo.');
-    const engine: AgentEngine = settings.engine === 'opencode' ? 'opencode' : 'claude';
+    const engine: AgentEngine = settings.engine === 'opencode' || settings.engine === 'antigravity' ? settings.engine : 'claude';
     const name = NAMES[engine];
     await ensureProjectSkills(root);
     // Session IDs belong to one CLI. After switching providers, start over with the full briefing.
@@ -91,6 +98,25 @@ export class Claude {
         '--mcp-config', await frameToolConfig(root, bridge, voice), '--strict-mcp-config'];
       if (settings.model) args.push('--model', settings.model);
       if (settings.effort) args.push('--effort', settings.effort);
+    } else if (engine === 'antigravity') {
+      command = antigravityExecutable(settings.antigravityPath);
+      // O Antigravity não aceita prompt por stdin: ou vai inline em -p=…, ou o agente lê de um arquivo.
+      let text = `[FRAMEPILOT]\n${reminder}\n\n${prompt}`;
+      if (text.length > ANTIGRAVITY_INLINE_LIMIT) {
+        const file = path.join(root, '.framepilot', 'pedido-atual.md');
+        await fs.mkdir(path.dirname(file), {recursive: true});
+        await fs.writeFile(file, text);
+        text = `[FRAMEPILOT]\nO pedido completo não coube na linha de comando e está em ${file}.\n`
+          + 'Leia esse arquivo inteiro antes de qualquer coisa e execute o que ele pede.';
+      }
+      args = ['--output-format', 'stream-json', '--model', settings.antigravityModel,
+        // accept-edits espelha o padrão do Claude Code aqui; Modo Auto libera tudo, como nos outros provedores.
+        '--mode', auto ? 'auto' : 'accept-edits'];
+      if (auto) args.push('--dangerously-skip-permissions');
+      if (project.session.id) args.push('--conversation', project.session.id);
+      // -p precisa do valor colado na flag: solto, ele engole o próximo argumento como prompt.
+      args.push(`-p=${text}`);
+      input = '';
     } else {
       command = opencodeExecutable(settings.opencodePath);
       // --auto approves only what the config does not deny (bash, web and outside-project access are denied unless Modo Auto is on).
@@ -99,7 +125,8 @@ export class Claude {
       // OpenCode has no appended system prompt; the reminder travels with the request.
       input = `[FRAMEPILOT]\n${reminder}\n\n${prompt}`;
     }
-    if (project.session.id) args.push(engine === 'claude' ? '--resume' : '--session', project.session.id);
+    // O Antigravity já recebeu --conversation acima, junto com o prompt.
+    if (project.session.id && engine !== 'antigravity') args.push(engine === 'claude' ? '--resume' : '--session', project.session.id);
     const message = {id: randomUUID(), role: 'user' as const, text: request, at: new Date().toISOString(),
       context: {assets: assetIds.map(id => {
         const a = project.assets.find(asset => asset.id === id)!;
@@ -144,6 +171,33 @@ export class Claude {
       }
       if (value.type === 'system' && value.subtype === 'api_retry') this.log(`Claude: nova tentativa (${value.error}).`);
     };
+    /**
+     * Antigravity: NDJSON com envelope {"event":X, X:{…}}.
+     * init traz conversation_id; step_update traz text_delta (streaming de verdade);
+     * result fecha com status SUCCESS/ERROR.
+     */
+    const onAntigravity = async (value: any) => {
+      await remember(value.init?.conversation_id ?? value.step_update?.conversation_id ?? value.result?.conversation_id);
+      if (value.event === 'step_update') {
+        const step = value.step_update ?? {};
+        if (step.step_type === 'agent_response' && typeof step.text_delta === 'string' && step.text_delta) {
+          streamed = true;
+          output += step.text_delta;
+          this.event({type: 'delta', text: step.text_delta});
+        }
+        if (step.step_type === 'tool_call' && step.state === 'ACTIVE') this.log(`Ferramenta: ${step.tool_name ?? 'desconhecida'}`);
+      }
+      if (value.event === 'result') {
+        const r = value.result ?? {};
+        result = r;
+        if (r.status !== 'SUCCESS') failure = r.error || `Antigravity terminou com status ${r.status}.`;
+        // Sem streaming (resposta curta demais), o texto final ainda precisa chegar ao chat.
+        if (!streamed && typeof r.response === 'string' && r.response.trim()) {
+          output = r.response;
+          this.event({type: 'delta', text: r.response});
+        }
+      }
+    };
     // OpenCode's JSON events carry whole parts (no token deltas): text, tool_use, step_start/step_finish, error.
     const onOpencode = async (value: any) => {
       await remember(value.sessionID);
@@ -170,7 +224,7 @@ export class Claude {
       this.changed();
       this.log(project.session.id ? `Retomando a sessão ${name} existente…` : `Iniciando ${name} com o contexto do projeto…`);
       this.job.child.stdin?.end(input);
-      const code = await jsonLines(this.job, engine === 'claude' ? onClaude : onOpencode, this.log);
+      const code = await jsonLines(this.job, engine === 'claude' ? onClaude : engine === 'antigravity' ? onAntigravity : onOpencode, this.log);
       if (interrupted) throw new Error('Solicitação interrompida. Arquivos já editados foram mantidos.');
       if (code !== 0 || !result || result.is_error || failure) {
         throw new Error(failure || `${name} não concluiu. Verifique instalação/autenticação e os logs. Se a sessão não existir mais, clique em Nova sessão.`);

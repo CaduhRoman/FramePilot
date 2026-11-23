@@ -3,7 +3,7 @@ import path from 'node:path';
 import {promises as fs} from 'node:fs';
 import type {IPty} from 'node-pty';
 import type {AppEvent, LoginKind, ProviderStatus, Settings} from '../shared/types';
-import {claudeExecutable, environment, opencodeExecutable, Processes} from './processes';
+import {antigravityExecutable, claudeExecutable, environment, opencodeExecutable, Processes} from './processes';
 
 /** Runs a short CLI command and returns its exit code and combined output; ENOENT becomes code null. */
 export async function capture(processes: Processes, command: string, args: string[], timeout = 15000, env = environment()) {
@@ -36,7 +36,7 @@ async function elevenlabsStatus(processes: Processes, settings: Settings) {
     capture(processes, opencodeExecutable(settings.opencodePath), ['mcp', 'auth', 'list'], 30000, await elevenlabsOpencodeEnv())
   ]);
   const line = opencode.output.split(/\r?\n/).find(l => l.includes(ELEVENLABS.name)) ?? '';
-  return {claude: claude.code === 0 && /Status:.*Connected/i.test(claude.output),
+  return {antigravity: false, claude: claude.code === 0 && /Status:.*Connected/i.test(claude.output),
     opencode: opencode.code === 0 && /✓|authenticated/i.test(line) && !/not authenticated|expired/i.test(line)};
 }
 
@@ -47,12 +47,24 @@ async function opencodeProviders() {
   catch {return [];}
 }
 
+/** `antigravity models` só responde autenticado, então ele serve de teste de instalação e de login ao mesmo tempo. */
+export async function antigravityModels(processes: Processes, settings: Settings) {
+  const executable = antigravityExecutable(settings.antigravityPath);
+  const {code, output} = await capture(processes, executable, ['models'], 60000);
+  if (code !== 0) return {installed: code !== null, path: executable, models: []};
+  // Cada linha é "id<TAB>Rótulo"; fica só o id, que é o que vai em --model.
+  const models = output.split(/\r?\n/).map(line => line.split('\t')[0].trim())
+    .filter(id => /^[a-z0-9][a-z0-9.-]{1,80}$/.test(id));
+  return {installed: true, path: executable, models};
+}
+
 export async function providerStatus(processes: Processes, settings: Settings): Promise<ProviderStatus> {
-  const [claude, opencode, providers, elevenlabs] = await Promise.all([
+  const [claude, opencode, providers, elevenlabs, antigravity] = await Promise.all([
     capture(processes, claudeExecutable(settings.claudePath), ['auth', 'status']),
     capture(processes, opencodeExecutable(settings.opencodePath), ['--version']),
     opencodeProviders(),
-    elevenlabsStatus(processes, settings)
+    elevenlabsStatus(processes, settings),
+    antigravityModels(processes, settings)
   ]);
   let auth: {loggedIn?: boolean; email?: string; authMethod?: string} = {};
   try {auth = JSON.parse(claude.output.slice(claude.output.indexOf('{')));} catch {}
@@ -61,6 +73,7 @@ export async function providerStatus(processes: Processes, settings: Settings): 
     claude: {installed: claude.code !== null && (claude.code === 0 || 'loggedIn' in auth), loggedIn: auth.loggedIn === true,
       account: auth.email, method: auth.authMethod},
     opencode: {installed: opencode.code === 0, version: opencode.output.trim().split('\n').pop(), providers},
+    antigravity,
     elevenlabs
   };
 }
