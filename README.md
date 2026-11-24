@@ -1,128 +1,165 @@
+<div align="center">
+
+<img src="docs/assets/logo.png" alt="FramePilot" width="112">
+
 # FramePilot
 
-**Edite vídeos conversando com uma IA.** Você junta seus arquivos, descreve o vídeo que quer, e a IA faz os cortes, legendas, títulos, trilha e animações. Você assiste ao resultado na hora, pede ajustes e exporta em MP4.
+### Seu estúdio de vídeo, movido a conversa.
 
-Tudo roda no seu computador: seus vídeos não são enviados para nenhum servidor do FramePilot.
+**Você descreve. A IA edita. Você assiste e ajusta.**
 
----
+Um editor de vídeo para Windows onde a edição acontece no chat: junte seus arquivos,
+descreva o vídeo que quer, e a IA faz os cortes, as legendas, a trilha e as animações.
+Tudo roda no seu computador — seus vídeos nunca saem dele.
 
-## Instalar
+[Instalar](#comece-agora) · [Recursos](#por-que-framepilot) · [Marcas](#marcas-a-identidade-em-um-lugar-só) · [Roadmap](#o-que-vem-por-aí)
 
-1. Baixe o instalador mais recente em **[Releases](https://github.com/CaduhRoman/FramePilot/releases/latest)** (`FramePilot-Setup-x.y.z.exe`).
-2. Execute o instalador.
-   > O Windows pode mostrar o aviso **"O Windows protegeu o computador"**. Clique em **Mais informações** e depois em **Executar assim mesmo**.
-3. Instale também o **[Node.js](https://nodejs.org)** (versão LTS), se ainda não tiver. O FramePilot usa o Node para montar e exportar seus vídeos.
+</div>
 
----
+<br>
 
-## Conecte sua IA
+![A biblioteca do FramePilot, com os projetos agrupados por marca](docs/assets/screenshot-home.png)
 
-Na primeira vez que você abre o FramePilot, aparece uma janela para escolher quem vai editar seus vídeos.
+<br>
 
-| Opção | Para quem |
-|---|---|
-| **Claude** | Quem assina o Claude Pro, Max ou Team. É a opção com melhor qualidade de edição. |
-| **ChatGPT** | Quem assina o ChatGPT Plus ou Pro (Codex). |
-| **GitHub Copilot** | Quem tem o Copilot Pro, Pro+ ou Business. |
-| **Outro provedor** | Gemini, OpenRouter, chave de API e outros. |
-| **Começar grátis** | Quem quer experimentar sem conta e sem cartão (modelo DeepSeek V4.1 Flash). |
+## Por que FramePilot?
 
-Ao escolher uma assinatura, o login abre no navegador, na página oficial do serviço. Você não precisa copiar nenhuma chave.
+Editar vídeo é repetitivo: cortar silêncio, sincronizar legenda, repor a logo, acertar a
+trilha. O FramePilot entrega essa parte para uma IA que **edita código de verdade** — uma
+composição Remotion ou HyperFrames no seu disco — e devolve um preview que você assiste na
+hora. Nada de timeline para arrastar: você fala o que quer mudar.
 
-O modo grátis tem limites de uso e funciona melhor em pedidos simples. Para edições mais elaboradas, uma assinatura dá resultados bem melhores.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-Você pode trocar de IA quando quiser em **Configurações → Trocar IA**.
+### 🎬 A IA edita, você dirige
+Peça "corta os silêncios", "legenda isso em 3 palavras", "coloca a logo no canto". A IA
+mexe na composição e o preview atualiza. Não gostou? Peça o ajuste.
 
-### Narração com IA (opcional)
+</td>
+<td width="50%" valign="top">
 
-Depois de escolher a IA, o FramePilot oferece conectar a **ElevenLabs**. Com ela, a IA gera locução, vozes e efeitos sonoros e já coloca o áudio no vídeo. O login abre na página oficial da ElevenLabs e as gerações usam os créditos da sua conta. Para conectar ou desativar depois, use **Configurações → Narração com IA**.
+### 🔒 Tudo no seu computador
+Seus vídeos, áudios e projetos ficam em `Vídeos/FramePilot`. O FramePilot não tem servidor:
+o que sai da máquina é só o texto do pedido, para a IA que **você** escolheu.
 
----
+</td>
+</tr>
+<tr>
+<td valign="top">
 
-## Criando seu primeiro vídeo
+### 🧠 A IA é sua escolha
+**Claude Code**, **OpenCode** (com um modo grátis, sem conta nem cartão) ou **Antigravity**,
+com Gemini 4 Neon e níveis de reasoning. Trocar é um clique em Configurações.
 
-### 1. Crie um projeto
-Clique em **Novo projeto** e preencha:
-- **Nome** do vídeo
-- **Briefing**: o que é o vídeo, para quem é, qual a mensagem
-- **Formato**: horizontal (YouTube), vertical (Reels/TikTok/Shorts) ou quadrado
-- **Duração**, **estilo visual** e observações
+</td>
+<td valign="top">
 
-O primeiro projeto demora alguns minutos para ficar pronto, porque o app baixa o que precisa da internet.
+### 👂 Ele ouve e enxerga o material
+Transcrição por Whisper com marcação por palavra e frames extraídos com FFmpeg entram no
+contexto. A IA corta no tempo exato da frase e evita cobrir rostos.
 
-### 2. Adicione seus arquivos
-Arraste para a janela ou clique em **Adicionar arquivos**. Você pode usar:
-- **Vídeo principal**: a gravação base do seu vídeo
-- **Outros vídeos**, **imagens**, **logos**, **áudios e músicas**, **fontes**
-- **Referências e documentos**: roteiros, exemplos de estilo, identidade visual
+</td>
+</tr>
+</table>
 
-Para cada arquivo, escreva rapidamente como ele deve ser usado ("logo no final", "música de fundo baixinha"…). Isso ajuda muito a IA.
+<br>
 
-Nos vídeos, você pode **cortar trechos** antes de enviar: abra o vídeo e marque só as partes que interessam.
+![Um projeto aberto: assets à esquerda, preview no centro e o chat de edição à direita](docs/assets/screenshot-workspace.png)
 
-### 3. Peça no chat
-Descreva o que você quer, como faria com um editor humano:
+<br>
 
-> *"Corte as pausas, coloque legendas grandes e amarelas sincronizadas com a fala, e termine com o logo animado."*
+## Marcas: a identidade em um lugar só
 
-A IA assiste ao material, lê as falas transcritas e edita o vídeo. O preview atualiza sozinho.
+Vários projetos da mesma marca usam a mesma logo, as mesmas cores e a mesma trilha. No
+FramePilot isso vive **um nível acima do projeto**: a marca guarda a identidade e os assets
+globais, e todo projeto criado dentro dela herda tudo.
 
-### 4. Ajuste e exporte
-Assista no preview, peça mudanças ("deixa a abertura mais rápida", "troca a cor da legenda") e, quando estiver bom, clique em **Renderizar MP4**.
+![Como a marca alimenta os projetos](docs/assets/diagrama-marca.svg)
 
----
+Os projetos referenciam os arquivos por **chave estável** — `brand:logo`, `brand:music-main` —
+nunca por caminho. Troque a logo na página da marca e todos os projetos em edição passam a
+usar a nova, sem abrir projeto por projeto.
 
-## Dicas
+E o vídeo que você já entregou não muda sozinho: ao exportar, o FramePilot congela a versão
+da marca num snapshot dentro do projeto. Re-renderizar meses depois reproduz o resultado
+antigo, até você clicar em **Atualizar para a marca atual**.
 
-- **Seja específico.** "Legendas brancas com contorno, no terço inferior" funciona melhor que "coloca legenda".
-- **Marque arquivos importantes com a estrela.** Eles são reapresentados à IA sempre que uma nova conversa começa.
-- **Nova sessão** recomeça a conversa sem perder o que já foi editado. É útil quando a IA se perde ou o projeto mudou muito.
-- **Interromper** para a IA na hora. O que ela já tinha editado continua salvo.
-- **Permissões**: se a IA precisar executar algo sensível (apagar arquivos, mexer fora do projeto), o FramePilot pergunta antes. Na dúvida, clique em **Negar**.
-- **Modo Auto**: para a IA trabalhar sem pedir permissão a cada passo (usar terminal, internet e instalar pacotes), ative em **Opções → Modo Auto**, no chat, ou em **Configurações → Modo Auto**.
+<br>
 
----
+![A criação de uma marca: nome, cores, formato padrão e a logo](docs/assets/screenshot-marca.png)
 
-## Transcrição e análise visual
+<br>
 
-Antes de cada pedido, o FramePilot pode:
-- **Transcrever as falas** dos seus vídeos, para a IA sincronizar legendas e cortes com o que é dito
-- **Extrair quadros** dos vídeos, para a IA "ver" o conteúdo
+## Pensado nos detalhes
 
-Na primeira vez, a transcrição baixa cerca de 2,3 GB. Em **Configurações → Salvar e verificar** você pode fazer esse download antes. As duas opções podem ser desligadas em Configurações.
+- **Dois motores de composição.** Crie o projeto em **Remotion** (React e TypeScript) ou em
+  **HyperFrames** (HTML e CSS). A escolha é na criação e o app cuida de preview e render dos dois.
+- **Material preparado.** Marque os trechos que valem num vídeo longo e o FramePilot entrega
+  à IA só o que você escolheu, já concatenado — ela não "recupera" o que você cortou.
+- **Narração com IA.** Com a ElevenLabs conectada, a IA gera locução, vozes e efeitos e já
+  posiciona o áudio na timeline.
+- **Modo Auto.** Deixe a IA trabalhar de ponta a ponta sem parar para confirmar cada comando.
+- **Permissões à vista.** Fora do Modo Auto, todo comando sensível abre um popup com o comando
+  completo, a pasta onde roda e o motivo. Negar é o padrão.
+- **Terminal e diagnóstico** embutidos, para ver exatamente o que a IA executou.
+- **Tema escuro**, com cor só onde ela informa: sucesso, erro e aviso.
 
----
+## Comece agora
 
-## Onde ficam meus projetos?
+Baixe o instalador mais recente em **[Releases](https://github.com/CaduhRoman/FramePilot/releases/latest)**
+(`FramePilot-Setup-x.y.z.exe`) e execute. É preciso ter o **Node.js 22 LTS** instalado — o
+FramePilot usa o npm para preparar cada projeto.
 
-Na pasta **Vídeos → FramePilot** do seu computador. Cada projeto tem sua própria pasta, com seus arquivos originais e os vídeos exportados (em `renders`). Seus arquivos originais nunca são alterados: o app trabalha com cópias.
+Na primeira abertura ele pergunta qual IA usar. Se você não tem assinatura nenhuma, escolha
+**Começar grátis**: ele instala o OpenCode e usa um modelo gratuito.
 
----
+> Projetos **HyperFrames** também precisam do FFmpeg completo no sistema
+> (`winget install --id Gyan.FFmpeg -e`). Projetos Remotion não precisam.
 
-## Algo deu errado?
+## O que vem por aí
 
-- **A IA não responde ou dá erro de login:** vá em **Configurações → Trocar IA** e entre de novo.
-- **O preview não aparece:** clique em **Diagnóstico → Reiniciar preview**. Se não resolver, use **Instalar dependências**.
-- **Quer ver o que está acontecendo por trás:** o botão **Diagnóstico** mostra os registros, a sessão atual e um terminal.
-- **"A sessão não existe mais":** clique em **Nova sessão**. Isso acontece, por exemplo, ao abrir o projeto em outro computador.
-
----
-
-## Bom saber
-
-- O FramePilot faz uma tarefa por vez: enquanto a IA edita ou o vídeo exporta, aguarde ou clique em **Interromper**.
-- Vídeos longos e arquivos pesados deixam a exportação mais demorada e usam mais memória.
-- O uso da IA conta no limite da sua própria assinatura (ou no limite do modo grátis).
-- Abra apenas projetos de fontes confiáveis: um projeto contém código que roda no seu computador para gerar o vídeo.
+- Mover um projeto entre marcas trocando os caminhos hardcoded automaticamente
+- Componentes de marca com hot-reload no preview
+- Narração registrada como asset da marca
+- macOS e Linux
 
 <details>
-<summary>Para desenvolvedores</summary>
+<summary><b>Para desenvolvedores</b></summary>
 
-```sh
+<br>
+
+```bash
+git clone https://github.com/CaduhRoman/FramePilot
+cd FramePilot
 npm install
-npm run dev        # app em modo de desenvolvimento
-npm run dist       # gera o instalador
-npm run test:smoke # testes
+npm run dev
 ```
 
+| Pasta | Papel |
+| --- | --- |
+| `src/main` | Processo principal: projetos, marcas, render, agentes de IA, terminal |
+| `src/renderer` | Interface React: biblioteca, marcas, chat, preview, diagnóstico |
+| `src/preload` | Ponte IPC, sem acesso a Node no renderer |
+| `src/shared` | Tipos compartilhados entre os três |
+| `.claude/skills` | Skills de direção de vídeo copiadas para cada projeto |
+
+- `npm run build` — typecheck e bundle
+- `npm run test:smoke` — testes de projeto, marca, render e transporte dos agentes
+- `npm run dist` — instalador com electron-builder
+
+Cada projeto no disco é uma pasta com `project.json` (metadados), `CONTEXT.md` (o que a IA
+recebe), `assets/`, `references/`, `renders/` e a composição (`remotion/` ou `index.html`).
+
 </details>
+
+<br>
+
+<div align="center">
+
+**Local por padrão. Conversa em vez de timeline.**
+
+<sub>© CaduhRoman</sub>
+
+</div>

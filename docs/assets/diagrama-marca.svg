@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 430" width="960" height="430" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Como a marca alimenta os projetos no FramePilot</title>
+  <desc id="d">A pasta da marca guarda logo, cores, fontes e componentes. Cada projeto dentro dela referencia os arquivos por chave estável, como brand:logo, em vez de caminho. Trocar o arquivo na marca atualiza todos os projetos em edição; projetos já exportados ficam presos a um snapshot da versão usada.</desc>
+
+  <rect width="960" height="430" fill="#0a0a0a"/>
+
+  <!-- Marca -->
+  <rect x="24" y="60" width="268" height="300" rx="14" fill="#121212" stroke="#2a2a2a"/>
+  <rect x="24" y="60" width="268" height="44" rx="14" fill="#1a1a1a"/>
+  <rect x="24" y="90" width="268" height="14" fill="#1a1a1a"/>
+  <text x="48" y="88" fill="#fafafa" font-size="16" font-weight="600">Marca &#8220;JA&#8221;</text>
+  <text x="48" y="130" fill="#b4b4b4" font-size="13">brand/brand.json &#183; vers&#227;o 3</text>
+
+  <text x="48" y="168" fill="#fafafa" font-size="13" font-weight="600">Assets, por chave</text>
+  <text x="48" y="192" fill="#6dd49a" font-size="13" font-family="ui-monospace, Consolas, monospace">brand:logo</text>
+  <text x="48" y="214" fill="#6dd49a" font-size="13" font-family="ui-monospace, Consolas, monospace">brand:logo-light</text>
+  <text x="48" y="236" fill="#6dd49a" font-size="13" font-family="ui-monospace, Consolas, monospace">brand:music-main</text>
+
+  <text x="48" y="272" fill="#fafafa" font-size="13" font-weight="600">Tokens</text>
+  <text x="48" y="294" fill="#b4b4b4" font-size="13">cores &#183; fontes &#183; &#225;rea segura</text>
+  <text x="48" y="322" fill="#fafafa" font-size="13" font-weight="600">Componentes</text>
+  <text x="48" y="344" fill="#b4b4b4" font-size="13">Intro &#183; Outro &#183; LowerThird</text>
+
+  <!-- Setas -->
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#6b6b6b"/>
+    </marker>
+  </defs>
+  <path d="M292 150 L372 150" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M292 250 L372 250" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M292 340 L372 340" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="332" y="140" fill="#8c8c8c" font-size="11" text-anchor="middle">herda</text>
+
+  <!-- Projetos -->
+  <g>
+    <rect x="376" y="104" width="300" height="92" rx="12" fill="#121212" stroke="#2a2a2a"/>
+    <text x="398" y="134" fill="#fafafa" font-size="14" font-weight="600">Reels de lan&#231;amento</text>
+    <text x="398" y="158" fill="#6dd49a" font-size="12" font-family="ui-monospace, Consolas, monospace">resolveAsset('brand:logo')</text>
+    <text x="398" y="178" fill="#8c8c8c" font-size="12">em edi&#231;&#227;o &#183; acompanha a marca</text>
+  </g>
+  <g>
+    <rect x="376" y="204" width="300" height="92" rx="12" fill="#121212" stroke="#2a2a2a"/>
+    <text x="398" y="234" fill="#fafafa" font-size="14" font-weight="600">Dia de campo</text>
+    <text x="398" y="258" fill="#6dd49a" font-size="12" font-family="ui-monospace, Consolas, monospace">useBrand().colors.primary</text>
+    <text x="398" y="278" fill="#8c8c8c" font-size="12">em edi&#231;&#227;o &#183; acompanha a marca</text>
+  </g>
+  <g>
+    <rect x="376" y="304" width="300" height="92" rx="12" fill="#121212" stroke="#f3c56b" stroke-opacity="0.45"/>
+    <text x="398" y="334" fill="#fafafa" font-size="14" font-weight="600">Apresenta&#231;&#227;o (exportada)</text>
+    <text x="398" y="358" fill="#f3c56b" font-size="12" font-family="ui-monospace, Consolas, monospace">.brand-snapshot/ &#183; vers&#227;o 2</text>
+    <text x="398" y="378" fill="#8c8c8c" font-size="12">congelada &#183; re-render reproduz o antigo</text>
+  </g>
+
+  <!-- Troca da logo -->
+  <rect x="712" y="104" width="224" height="192" rx="12" fill="#121212" stroke="#2a2a2a"/>
+  <text x="734" y="134" fill="#fafafa" font-size="14" font-weight="600">Trocou a logo?</text>
+  <text x="734" y="162" fill="#b4b4b4" font-size="12">A chave continua a mesma.</text>
+  <text x="734" y="184" fill="#b4b4b4" font-size="12">Nenhum projeto &#233; editado.</text>
+  <text x="734" y="214" fill="#6dd49a" font-size="12">&#8593; os dois de cima j&#225;</text>
+  <text x="734" y="232" fill="#6dd49a" font-size="12">usam a logo nova</text>
+  <text x="734" y="262" fill="#f3c56b" font-size="12">&#8595; o exportado segue</text>
+  <text x="734" y="280" fill="#f3c56b" font-size="12">com a antiga</text>
+
+  <path d="M676 150 L708 150" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M676 250 L708 250" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M676 350 L700 350 L700 296" stroke="#6b6b6b" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+
+  <text x="24" y="406" fill="#8c8c8c" font-size="12">Projetos sem marca continuam funcionando como antes, na se&#231;&#227;o &#8220;Avulsos&#8221;.</text>
+</svg>

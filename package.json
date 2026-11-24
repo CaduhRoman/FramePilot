@@ -1,7 +1,7 @@
 {
   "name": "framepilot",
   "version": "0.3.0",
-  "description": "Local video editing harness for Claude Code and Remotion",
+  "description": "Editor de vídeo local onde a edição acontece no chat: marcas com assets globais, composições em Remotion ou HyperFrames, e a IA à sua escolha (Claude Code, OpenCode ou Antigravity).",
   "private": true,
   "main": "out/main/index.js",
   "scripts": {

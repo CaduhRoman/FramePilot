@@ -71,7 +71,8 @@ export function BrandLibrary({state, busy, onOpen, onMove, onBrand, onNewBrand}:
               : `${group.items.length} projeto(s) sem marca`}</small>
           </span>
         </button>
-        {brand && <Button variant="ghost" icon="sliders" disabled={busy} onClick={() => onBrand(brand.kit.id)}>Abrir marca</Button>}
+        {brand && <Button variant="ghost" icon="sliders" disabled={busy} aria-label={`Abrir marca ${brand.kit.name}`}
+          onClick={() => onBrand(brand.kit.id)}>Abrir marca</Button>}
       </header>
       {open && (group.items.length
         ? <ul className="project-grid">{group.items.map(summary =>
@@ -133,7 +134,7 @@ export function NewBrandDialog({api, act, busy, onClose}: {
       <ColorFields colors={colors} onChange={setColors} />
       <label className="field">Formato padrão dos vídeos
         <Select label="Formato padrão" value={format} onChange={setFormat} options={FORMATS} /></label>
-      <label className="field">Logo principal (vira <code>brand:logo</code>)
+      <label className="field">Logo principal <span className="opt">(vira a chave brand:logo)</span>
         <div className="row">
           <Button icon="upload" disabled={busy} onClick={() => void act(async () => {
             const paths = await api.pickFiles();
